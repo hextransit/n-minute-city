@@ -1,6 +1,7 @@
 mod hexagon_graph;
 mod u64_graph;
 
+use std::collections::VecDeque;
 use std::hash::Hash;
 use std::{
     collections::HashMap,
@@ -32,7 +33,7 @@ pub struct Edge<T> {
     pub capacity: Option<f64>,
 }
 
-impl<T: Eq + Hash + Copy + Send + Sync> Graph<T> {
+impl<T: Eq + Hash + Copy + Send + Sync + std::fmt::Debug> Graph<T> {
     pub fn new() -> Self {
         Self {
             nodes: Vec::new(),
@@ -43,55 +44,104 @@ impl<T: Eq + Hash + Copy + Send + Sync> Graph<T> {
 
     /// calculate the directed distance from a set of origins to all nodes in the graph
     /// * if `infinity` is None, the distance to all nodes will be recorded, otherwise the calculation is cutoff at `infinity`
-    /// 
+    ///
     /// this function is parallelized using rayon
-    pub fn matrix_distance(&self, origins: Vec<T>, infinity: Option<f64>) -> Vec<Option<Vec<Arc<Node<T>>>>> {
-        origins.par_iter().map(|s| self.bfs(*s, None)).collect()
+    pub fn matrix_bfs_distance(
+        &self,
+        origins: Vec<T>,
+        _infinity: Option<f64>,
+    ) -> Vec<HashMap<T, f64>> {
+        origins
+            .into_par_iter()
+            .flat_map(|s| self.bfs(s, None).map(|res| res.1))
+            .collect()
     }
 
     /// perform a breadth first search on the graph
     /// * if `end` is None, the distance to all nodes will be recorded
-    /// * if `end` is Some, only the distances on the backtraced path will be returned, 
+    /// * if `end` is Some, only the distances on the backtraced path will be returned,
     /// the nodes will be in the order of the path
-    pub fn bfs(&self, start: T, end: Option<T>) -> Option<Vec<Arc<Node<T>>>> {
-        
-        let mut queue = Vec::new();
-        let mut visited = Vec::new();
-        let mut path = Vec::new();
+    pub fn bfs(
+        &self,
+        start: T,
+        end: Option<T>,
+    ) -> anyhow::Result<(Option<Vec<T>>, HashMap<T, f64>)> {
+        let mut q: VecDeque<(f64, &Edge<T>)> = VecDeque::new();
+        let mut explored = HashMap::<T, bool>::new();
+        let mut distances = HashMap::<T, f64>::new();
+        let mut parents = HashMap::<T, T>::new();
 
-        let start_node = self.node_map.get_by_left(&start).unwrap();
-        // let end_node = self.node_map.get_by_left(&end).unwrap();
+        // let start_node = self.node_map.get_by_left(&start);
+        println!("start node: {:?}", start);
+        println!("nodes: {:?}", self.edges.get(&start));
 
-        queue.push(self.nodes[*start_node].as_ref().unwrap().clone());
+        // get the edges from the start node
+        explored.insert(start, true);
+        distances.insert(start, 0.0);
 
-        while !queue.is_empty() {
-            let current_node = queue.remove(0);
-            visited.push(current_node.id);
+        self.edges
+            .get(&start)
+            .ok_or_else(|| anyhow::anyhow!("start node not found in adjacency list"))?
+            .iter()
+            .for_each(|edge| {
+                let edge = edge.as_ref();
+                let edge_length = edge.weight.unwrap_or(1.0);
+                q.push_back((edge_length, edge));
+            });
 
-            if current_node.id == end {
-                path.push(current_node);
-                break;
-            }
+        while !q.is_empty() {
+            let (current_distance, current_egde) =
+                q.pop_front().ok_or_else(|| anyhow::anyhow!("queue is empty"))?;
 
-            let edges = self.edges.get(&current_node.id).unwrap();
-            for edge in edges {
-                let to_node = edge.to.upgrade().unwrap();
-                if !visited.contains(&to_node.id) {
-                    queue.push(to_node.clone());
-                    path.push(to_node.clone());
+            // get the target of the current edge
+            let Some(target) = current_egde.to.upgrade() else {
+                continue
+            };
+
+            // record distance to target
+            distances.insert(target.id, current_distance);
+
+            // mark target as explored
+            explored.insert(target.id, true);
+
+            // record target parent
+            parents.insert(target.id, current_egde.from.upgrade().unwrap().id);
+
+            if let Some(end) = &end {
+                if &target.id == end {
+                    // found the target, backtrace the path
+                    let mut path = Vec::<T>::new();
+                    let mut current = target.id;
+                    while let Some(parent) = parents.get(&current) {
+                        path.push(*parent);
+                        current = *parent;
+                    }
+
+                    return Ok((Some(path), distances));
                 }
             }
+
+            // we have not found the target, add unexplored edges from the target to the queue
+            // check if there are any unexplored edges from the target
+            if let Some(next_edges) = self.edges.get(&target.id) {
+                next_edges.iter().for_each(|edge| {
+                    let edge = edge.as_ref();
+                    let edge_length = edge.weight.unwrap_or(1.0);
+                    if let Some(edge_target) = edge.to.upgrade() {
+                        if !explored.contains_key(&edge_target.id) {
+                            q.push_back((current_distance + edge_length, edge));
+                        }
+                    }
+                });
+            }
+            
         }
 
-        if path.is_empty() {
-            None
-        } else {
-            Some(path)
-        }
+        Ok((None, distances))
     }
 }
 
-impl<T: Eq + Hash + Copy + Send + Sync> Default for Graph<T> {
+impl<T: Eq + Hash + Copy + Send + Sync + std::fmt::Debug> Default for Graph<T> {
     fn default() -> Self {
         Self::new()
     }

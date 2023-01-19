@@ -1,6 +1,9 @@
 use crate::{Edge, Graph, Node};
 use anyhow::Result;
-use std::{sync::{Arc, Weak}, fmt::Display};
+use std::{
+    fmt::Display,
+    sync::{Arc, Weak},
+};
 
 impl Graph<u64> {
     /// add an edge to the graph, if the nodes don't exist, they will be created
@@ -64,7 +67,7 @@ impl Graph<u64> {
     }
 }
 
-impl Display for Edge<u64>{
+impl Display for Edge<u64> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,

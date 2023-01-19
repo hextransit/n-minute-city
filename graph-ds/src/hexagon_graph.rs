@@ -21,7 +21,9 @@ impl Graph<Cell> {
         // map cell to node id
 
         let start_node = match self.node_map.get_by_left(&from) {
-            Some(start_node_index) => Arc::downgrade(self.nodes[*start_node_index].as_ref().unwrap()),
+            Some(start_node_index) => {
+                Arc::downgrade(self.nodes[*start_node_index].as_ref().unwrap())
+            }
             _ => self.add_node(Node {
                 id: from,
                 layer: None,
