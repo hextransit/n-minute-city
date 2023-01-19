@@ -3,9 +3,13 @@ name = "graph-ds"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[[bin]]
+name = "cli"
 
 [dependencies]
 anyhow = "1.0"
 bimap = "0.6.2"
 rayon = "1.6.1"
+
+serde = { version = "1.0.147", features = ["derive"] }
+rmp-serde = "1.1.1"

@@ -1,7 +1,7 @@
-mod hexagon_graph;
-mod u64_graph;
+pub mod hexagon_graph;
+pub mod u64_graph;
 
-use std::collections::VecDeque;
+use std::collections::{VecDeque, HashSet};
 use std::hash::Hash;
 use std::{
     collections::HashMap,
@@ -67,16 +67,12 @@ impl<T: Eq + Hash + Copy + Send + Sync + std::fmt::Debug> Graph<T> {
         end: Option<T>,
     ) -> anyhow::Result<(Option<Vec<T>>, HashMap<T, f64>)> {
         let mut q: VecDeque<(f64, &Edge<T>)> = VecDeque::new();
-        let mut explored = HashMap::<T, bool>::new();
+        let mut explored = HashSet::<T>::new();
         let mut distances = HashMap::<T, f64>::new();
         let mut parents = HashMap::<T, T>::new();
 
-        // let start_node = self.node_map.get_by_left(&start);
-        println!("start node: {:?}", start);
-        println!("nodes: {:?}", self.edges.get(&start));
-
         // get the edges from the start node
-        explored.insert(start, true);
+        explored.insert(start);
         distances.insert(start, 0.0);
 
         self.edges
@@ -87,6 +83,8 @@ impl<T: Eq + Hash + Copy + Send + Sync + std::fmt::Debug> Graph<T> {
                 let edge = edge.as_ref();
                 let edge_length = edge.weight.unwrap_or(1.0);
                 q.push_back((edge_length, edge));
+                // explored.insert(edge.to.upgrade().unwrap().id);
+                // distances.insert(edge.to.upgrade().unwrap().id, edge_length);
             });
 
         while !q.is_empty() {
@@ -99,25 +97,29 @@ impl<T: Eq + Hash + Copy + Send + Sync + std::fmt::Debug> Graph<T> {
             };
 
             // record distance to target
-            distances.insert(target.id, current_distance);
-
-            // mark target as explored
-            explored.insert(target.id, true);
+            // distances.insert(target.id, current_distance);
 
             // record target parent
-            parents.insert(target.id, current_egde.from.upgrade().unwrap().id);
+            // parents.insert(target.id, current_egde.from.upgrade().unwrap().id);
+
+            // println!("visiting node: {:?}", target.id);
 
             if let Some(end) = &end {
                 if &target.id == end {
                     // found the target, backtrace the path
-                    let mut path = Vec::<T>::new();
-                    let mut current = target.id;
-                    while let Some(parent) = parents.get(&current) {
-                        path.push(*parent);
-                        current = *parent;
-                    }
-
-                    return Ok((Some(path), distances));
+                    println!("found target: {:?}", target.id);
+                    println!("{}", current_distance);
+                    // let mut path = Vec::<T>::new();
+                    // let mut current = target.id;
+                    // while let Some(parent) = parents.get(&current) {
+                    //     if parent == &start {
+                    //         break;
+                    //     }
+                    //     path.push(*parent);
+                    //     current = *parent;
+                    // }
+                    // TODO: backtrace the path
+                    return Ok((None, distances));
                 }
             }
 
@@ -128,13 +130,16 @@ impl<T: Eq + Hash + Copy + Send + Sync + std::fmt::Debug> Graph<T> {
                     let edge = edge.as_ref();
                     let edge_length = edge.weight.unwrap_or(1.0);
                     if let Some(edge_target) = edge.to.upgrade() {
-                        if !explored.contains_key(&edge_target.id) {
+                        if !explored.contains(&edge_target.id) {
+                            explored.insert(edge_target.id);
+                            distances.insert(edge_target.id, current_distance + edge_length);
+                            parents.insert(edge_target.id, target.id);
+
                             q.push_back((current_distance + edge_length, edge));
                         }
                     }
                 });
             }
-            
         }
 
         Ok((None, distances))

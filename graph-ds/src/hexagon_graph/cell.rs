@@ -1,3 +1,5 @@
+use serde::{Serialize, Deserialize};
+
 #[allow(clippy::upper_case_acronyms)]
 pub enum Direction {
     N,
@@ -19,7 +21,7 @@ pub enum Direction {
 ///  * radius: the size of each hexagon
 ///  * layer: for multi-layer grids, think of it as levels on buildings (implementation is not yet complete)
 ///
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Cell {
     pub a: i16,
     pub b: i16,

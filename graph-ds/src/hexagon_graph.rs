@@ -1,6 +1,6 @@
-mod cell;
+pub mod cell;
 
-use std::sync::{Arc, Weak};
+use std::{sync::{Arc, Weak}, collections::HashSet};
 
 use crate::{Graph, Node};
 use anyhow::Result;
@@ -16,7 +16,7 @@ impl Graph<Cell> {
         to: Cell,
         weight: Option<f64>,
         capacity: Option<f64>,
-    ) -> Result<bool> {
+    ) -> Result<()> {
         // check if the nodes exist and if not, create them
         // map cell to node id
 
@@ -49,7 +49,7 @@ impl Graph<Cell> {
                 capacity,
             }));
 
-        Ok(true)
+        Ok(())
     }
 
     /// add a node to the graph, changes the node ID to the index of the node in the vector
@@ -65,4 +65,18 @@ impl Graph<Cell> {
 
         Ok(node_weak)
     }
+}
+
+pub fn hexagon_graph_from_file(path: &str) -> Result<Graph<Cell>> {
+    //reader
+    let file = std::fs::File::open(path)?;
+    let mut graph = Graph::<Cell>::new();
+    let edges : HashSet<(Cell, Cell)> = rmp_serde::from_read(file)?;
+    edges.iter().for_each(|(from, to)| {
+        let res = graph.build_and_add_egde(*from, *to, Some(1.0), None);
+        if res.is_err() {
+            println!("error: {:?}", res);
+        }
+    });
+    Ok(graph)
 }
