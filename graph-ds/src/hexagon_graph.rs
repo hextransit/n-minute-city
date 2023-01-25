@@ -1,9 +1,13 @@
 pub mod cell;
 
-use std::{sync::{Arc, Weak}, collections::HashSet};
+use std::{
+    collections::HashSet,
+    sync::{Arc, RwLock, RwLockWriteGuard},
+};
 
 use crate::{Graph, Node};
 use anyhow::Result;
+use bimap::BiHashMap;
 use cell::Cell;
 
 /// each node is a hexagon cell
@@ -20,50 +24,64 @@ impl Graph<Cell> {
         // check if the nodes exist and if not, create them
         // map cell to node id
 
-        let start_node = match self.node_map.get_by_left(&from) {
-            Some(start_node_index) => {
-                Arc::downgrade(self.nodes[*start_node_index].as_ref().unwrap())
-            }
-            _ => self.add_node(Node {
-                id: from,
-                layer: None,
-            })?,
+        let mut node_map = self.node_map.as_ref().write().unwrap();
+        let mut node_list = self.nodes.as_ref().write().unwrap();
+
+        let start_node_index = match node_map.get_by_left(&from) {
+            Some(start_node_index) => *start_node_index,
+            _ => self.add_node(
+                Node {
+                    id: from,
+                    layer: None,
+                },
+                &mut node_list,
+                &mut node_map,
+            )?,
         };
-        let end_node = match self.node_map.get_by_left(&to) {
-            Some(end_node_index) => Arc::downgrade(self.nodes[*end_node_index].as_ref().unwrap()),
-            _ => self.add_node(Node {
-                id: to,
-                layer: None,
-            })?,
+        let end_node_index = match node_map.get_by_left(&to) {
+            Some(end_node_index) => *end_node_index,
+            _ => self.add_node(
+                Node {
+                    id: to,
+                    layer: None,
+                },
+                &mut node_list,
+                &mut node_map,
+            )?,
         };
 
         // create the edge
         // add the edge to the graph
         self.edges
-            .entry(start_node.upgrade().unwrap().id)
-            .or_insert_with(Vec::new)
-            .push(Arc::new(crate::Edge {
-                from: start_node,
-                to: end_node,
+            .as_ref()
+            .write()
+            .unwrap()
+            .entry(start_node_index)
+            .or_default()
+            .push(crate::Edge {
+                from: start_node_index,
+                to: end_node_index,
                 weight,
                 capacity,
-            }));
+            });
 
         Ok(())
     }
 
     /// add a node to the graph, changes the node ID to the index of the node in the vector
-    pub fn add_node(&mut self, node: Node<Cell>) -> Result<Weak<Node<Cell>>> {
+    pub fn add_node(
+        &self,
+        node: Node<Cell>,
+        node_list: &mut RwLockWriteGuard<Vec<Option<Node<Cell>>>>,
+        node_map: &mut RwLockWriteGuard<BiHashMap<Cell, usize>>,
+    ) -> Result<usize> {
         // the vector index will be saved in the node map
         let cell: Cell = node.id;
-        let node_arc = Arc::new(node);
-        let node_weak = Arc::downgrade(&node_arc);
-        let node_id = self.nodes.len();
+        let node_idx = node_list.len();
         // add node to the node_map
-        self.node_map.insert(cell, node_id);
-        self.nodes.push(Some(node_arc));
-
-        Ok(node_weak)
+        node_map.insert(cell, node_idx);
+        node_list.push(Some(node));
+        Ok(node_idx)
     }
 }
 
@@ -71,7 +89,7 @@ pub fn hexagon_graph_from_file(path: &str) -> Result<Graph<Cell>> {
     //reader
     let file = std::fs::File::open(path)?;
     let mut graph = Graph::<Cell>::new();
-    let edges : HashSet<(Cell, Cell)> = rmp_serde::from_read(file)?;
+    let edges: HashSet<(Cell, Cell)> = rmp_serde::from_read(file)?;
     edges.iter().for_each(|(from, to)| {
         let res = graph.build_and_add_egde(*from, *to, Some(1.0), None);
         if res.is_err() {

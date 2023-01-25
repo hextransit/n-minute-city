@@ -13,3 +13,4 @@ rayon = "1.6.1"
 
 serde = { version = "1.0.147", features = ["derive"] }
 rmp-serde = "1.1.1"
+nohash = "0.2.0"
