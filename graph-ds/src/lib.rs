@@ -136,17 +136,19 @@ impl<T: Eq + Hash + Copy + Send + Sync + std::fmt::Debug> Graph<T> {
             // we have not found the target, add unexplored edges from the target to the queue
             // check if there are any unexplored edges from the target
             if let Some(next_edges) = edges_access.get(&current_target_idx) {
-                next_edges.iter().for_each(|edge| {
-                    let edge_length = edge.weight.unwrap_or(1.0);
+                for edge in next_edges.iter() {
                     let edge_target_idx = edge.to;
                     if !explored[edge_target_idx] {
+
+                        let edge_length = edge.weight.unwrap_or(1.0);
+
                         explored[edge_target_idx] = true;
                         distances[edge_target_idx] = Some(current_distance + edge_length);
                         parents[edge_target_idx] = Some(current_egde.to);
 
                         q.push_back((current_distance + edge_length, edge));
                     }
-                });
+                }
             }
         }
 

@@ -24,16 +24,16 @@ fn main() -> anyhow::Result<()> {
 
     println!("start: {:?}, end: {:?}", start, end);
     let now = Instant::now();
-    let (path, _) = graph.bfs(start, Some(end))?;
+    graph.bfs(start, Some(end))?;
     println!("time: {:?} µs", now.elapsed().as_micros());
-    println!("path: {:?}", path);
+    // println!("path: {:?}", path);
 
-    println!("matrix bfs");
-    let iterations = 100000;
-    let now = Instant::now();
-    graph.matrix_bfs_distance(vec![start; iterations], None);
-    let elapsed = now.elapsed().as_micros();
-    println!("time: {:?} µs ({:?} µs /iteration)", elapsed, elapsed / iterations as u128);
+    // println!("matrix bfs");
+    // let iterations = 10000;
+    // let now = Instant::now();
+    // graph.matrix_bfs_distance(vec![start; iterations], None);
+    // let elapsed = now.elapsed().as_micros();
+    // println!("time: {:?} µs ({:?} µs /iteration)", elapsed, elapsed / iterations as u128);
 
     Ok(())
 }
