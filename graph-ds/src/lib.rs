@@ -1,7 +1,7 @@
 pub mod hexagon_graph;
 pub mod u64_graph;
 
-use std::collections::{VecDeque, HashSet};
+use std::collections::{HashSet, VecDeque};
 use std::hash::Hash;
 use std::{
     collections::HashMap,
@@ -53,13 +53,22 @@ impl<T: Eq + Hash + Copy + Send + Sync + std::fmt::Debug> Graph<T> {
         &self,
         origins: Vec<T>,
         _infinity: Option<f64>,
+        force: bool,
     ) -> Vec<Vec<Option<f64>>> {
-        origins
-            // .into_iter()
-            // .collect::<HashSet<T>>()
+        if force {
+            origins
             .into_par_iter()
             .flat_map(|s| self.bfs(s, None).map(|res| res.1))
             .collect()
+        } else {
+            // removes duplicates before iteration
+            origins
+            .into_iter()
+            .collect::<HashSet<T>>()
+            .into_par_iter()
+            .flat_map(|s| self.bfs(s, None).map(|res| res.1))
+            .collect()
+        }
     }
 
     #[allow(clippy::type_complexity)]
@@ -139,7 +148,6 @@ impl<T: Eq + Hash + Copy + Send + Sync + std::fmt::Debug> Graph<T> {
                 for edge in next_edges.iter() {
                     let edge_target_idx = edge.to;
                     if !explored[edge_target_idx] {
-
                         let edge_length = edge.weight.unwrap_or(1.0);
 
                         explored[edge_target_idx] = true;

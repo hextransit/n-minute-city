@@ -2,7 +2,7 @@ pub mod cell;
 
 use std::{
     collections::HashSet,
-    sync::{Arc, RwLock, RwLockWriteGuard},
+    sync::RwLockWriteGuard,
 };
 
 use crate::{Graph, Node};

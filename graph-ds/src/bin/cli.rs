@@ -28,12 +28,12 @@ fn main() -> anyhow::Result<()> {
     println!("time: {:?} µs", now.elapsed().as_micros());
     // println!("path: {:?}", path);
 
-    // println!("matrix bfs");
-    // let iterations = 10000;
-    // let now = Instant::now();
-    // graph.matrix_bfs_distance(vec![start; iterations], None);
-    // let elapsed = now.elapsed().as_micros();
-    // println!("time: {:?} µs ({:?} µs /iteration)", elapsed, elapsed / iterations as u128);
+    println!("matrix bfs");
+    let iterations = 10000;
+    let now = Instant::now();
+    graph.matrix_bfs_distance(vec![start; iterations], None, true);
+    let elapsed = now.elapsed().as_micros();
+    println!("time: {:?} µs ({:?} µs /iteration)", elapsed, elapsed / iterations as u128);
 
     Ok(())
 }
