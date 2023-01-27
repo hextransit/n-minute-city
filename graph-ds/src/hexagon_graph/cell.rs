@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 #[allow(clippy::upper_case_acronyms)]
+#[derive(Debug, Clone, Copy)]
 pub enum Direction {
     N,
     NE,

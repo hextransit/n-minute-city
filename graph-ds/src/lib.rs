@@ -46,6 +46,9 @@ impl<T: Eq + Hash + Copy + Send + Sync + std::fmt::Debug> Graph<T> {
         }
     }
 
+    /// add an edge to the graph
+    /// * if the nodes do not exist, they will be created
+    /// * and edge can have a weight and capacity
     pub fn build_and_add_egde(
         &mut self,
         from: T,
