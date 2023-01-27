@@ -194,16 +194,12 @@ impl<T: Eq + Hash + Copy + Send + Sync + std::fmt::Debug> Graph<T> {
             // get the target of the current edge
             let current_target_idx = current_egde.to;
 
-            // distances[current_target_idx] = Some(current_distance + current_egde.weight.unwrap_or(1.0));
-            // parents[current_target_idx] = Some(current_egde.from);
-
             if let Some(end) = global_target_idx {
                 if &current_target_idx == end {
                     // found the target, backtrace the path
                     println!("found target: {current_target_idx:?}",);
                     println!("distance: {current_distance}, backtracing path",);
 
-                    // parents[*end] = Some(current_target_idx);
                     // backtrace the path in parents
                     let path = self.backtrace(&parents, *end, *start_idx);
 
