@@ -3,7 +3,7 @@ pub mod h3cell;
 
 use std::collections::HashSet;
 
-use crate::{Graph, Edge};
+use crate::{Edge, Graph};
 use cell::Cell;
 
 use self::{cell::Direction, h3cell::H3Cell};
@@ -57,6 +57,9 @@ impl Graph<H3Cell> {
             .get_by_right(&edge.to)
             .ok_or(anyhow::anyhow!("end node not found"))?;
 
-        start.cell.edge(end.cell).ok_or(anyhow::anyhow!("nodes are not neighbors in the H3 space"))
+        start
+            .cell
+            .edge(end.cell)
+            .ok_or(anyhow::anyhow!("nodes are not neighbors in the H3 space"))
     }
 }
