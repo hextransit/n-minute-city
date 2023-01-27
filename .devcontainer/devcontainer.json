@@ -4,10 +4,6 @@
     "ghcr.io/devcontainers/features/rust:1": {
     },
     "ghcr.io/devcontainers/features/python:1": {
-      "options": {
-        "version": 3.11,
-        "installJupyterlab": true
-      }
     }
   }
 }
