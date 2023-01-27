@@ -50,6 +50,10 @@ impl Graph<Cell> {
             )?,
         };
 
+        if start_node_index == end_node_index {
+            return Ok(());
+        }
+
         // create the edge
         // add the edge to the graph
         self.edges

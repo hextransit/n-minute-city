@@ -57,17 +57,17 @@ impl<T: Eq + Hash + Copy + Send + Sync + std::fmt::Debug> Graph<T> {
     ) -> Vec<Vec<Option<f64>>> {
         if force {
             origins
-            .into_par_iter()
-            .flat_map(|s| self.bfs(s, None).map(|res| res.1))
-            .collect()
+                .into_par_iter()
+                .flat_map(|s| self.bfs(s, None).map(|res| res.1))
+                .collect()
         } else {
             // removes duplicates before iteration
             origins
-            .into_iter()
-            .collect::<HashSet<T>>()
-            .into_par_iter()
-            .flat_map(|s| self.bfs(s, None).map(|res| res.1))
-            .collect()
+                .into_iter()
+                .collect::<HashSet<T>>()
+                .into_par_iter()
+                .flat_map(|s| self.bfs(s, None).map(|res| res.1))
+                .collect()
         }
     }
 
@@ -110,6 +110,8 @@ impl<T: Eq + Hash + Copy + Send + Sync + std::fmt::Debug> Graph<T> {
             .iter()
             .for_each(|edge| {
                 let edge_length = edge.weight.unwrap_or(1.0);
+                explored[edge.to] = true;
+                distances[edge.to] = Some(edge_length);
                 q.push_back((edge_length, edge));
             });
 
@@ -118,49 +120,70 @@ impl<T: Eq + Hash + Copy + Send + Sync + std::fmt::Debug> Graph<T> {
                 .pop_front()
                 .ok_or_else(|| anyhow::anyhow!("queue is empty"))?;
 
+
             // get the target of the current edge
             let current_target_idx = current_egde.to;
+
+            // distances[current_target_idx] = Some(current_distance + current_egde.weight.unwrap_or(1.0));
+            // parents[current_target_idx] = Some(current_egde.from);
+
 
             if let Some(end) = global_target_idx {
                 if &current_target_idx == end {
                     // found the target, backtrace the path
                     println!("found target: {:?}", current_target_idx);
-                    println!("{}", current_distance);
-                    // backtrace the path in parents
-                    // let mut path = Vec::new();
-                    // let mut current_idx = current_target_idx;
-                    // // let node_access = self.nodes.as_ref().read().unwrap();
-                    // while let Some(parent_idx) = parents[current_idx] {
-                    //     path.push(parent_idx);
-                    //     if current_idx == *start_idx {
-                    //         break;
-                    //     }
-                    //     current_idx = parent_idx;
-                    // }
+                    println!("distance: {}, backtracing path", current_distance);
 
-                    return Ok((None, distances));
+                    // parents[*end] = Some(current_target_idx);
+                    // backtrace the path in parents
+                    let path = self.backtrace(&parents, *end, *start_idx);
+
+                    return Ok((path.ok(), distances));
                 }
             }
 
             // we have not found the target, add unexplored edges from the target to the queue
             // check if there are any unexplored edges from the target
             if let Some(next_edges) = edges_access.get(&current_target_idx) {
-                for edge in next_edges.iter() {
-                    let edge_target_idx = edge.to;
-                    if !explored[edge_target_idx] {
-                        let edge_length = edge.weight.unwrap_or(1.0);
+                for next_edge in next_edges.iter() {
+                    let next_edge_target_idx = next_edge.to;
+                    if !explored[next_edge_target_idx] {
+                        let next_edge_length = next_edge.weight.unwrap_or(1.0);
 
-                        explored[edge_target_idx] = true;
-                        distances[edge_target_idx] = Some(current_distance + edge_length);
-                        parents[edge_target_idx] = Some(current_egde.to);
+                        explored[next_edge_target_idx] = true;
+                        distances[next_edge_target_idx] = Some(current_distance + next_edge_length);
+                        parents[next_edge_target_idx] = Some(current_egde.to);
 
-                        q.push_back((current_distance + edge_length, edge));
+                        q.push_back((current_distance + next_edge_length, next_edge));
                     }
                 }
             }
         }
 
-        Ok((None, Vec::new()))
+        Ok((None, distances))
+    }
+
+    pub fn backtrace(
+        &self,
+        parents: &Vec<Option<usize>>,
+        target: usize,
+        start: usize,
+    ) -> anyhow::Result<Vec<T>> {
+        let node_map_access = self.node_map.as_ref().read().unwrap();
+        let mut path = Vec::new();
+        let mut current = target;
+        while current != start {
+            let Some(node) = node_map_access.get_by_right(&current) else {
+                break;
+            };
+            path.push(*node);
+            if let Some(parent) = parents[current] {
+                current = parent;
+            } else {
+                break;
+            }
+        }
+        Ok(path)
     }
 }
 

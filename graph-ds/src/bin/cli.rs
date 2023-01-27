@@ -24,9 +24,12 @@ fn main() -> anyhow::Result<()> {
 
     println!("start: {:?}, end: {:?}", start, end);
     let now = Instant::now();
-    graph.bfs(start, Some(end))?;
+    let (Some(path), _) = graph.bfs(start, Some(end))? else {
+        println!("backtracing failed");
+        return Ok(());
+    };
     println!("time: {:?} µs", now.elapsed().as_micros());
-    // println!("path: {:?}", path);
+    println!("path: {:?} ({})", path, path.len());
 
     println!("matrix bfs");
     let iterations = 10000;
