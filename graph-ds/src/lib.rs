@@ -3,14 +3,16 @@ pub mod u64_graph;
 
 use std::collections::{HashSet, VecDeque};
 use std::hash::Hash;
+use std::sync::RwLockWriteGuard;
 use std::{
     collections::HashMap,
     sync::{Arc, RwLock},
 };
 
-use bimap::BiMap;
+use bimap::{BiHashMap, BiMap};
 use rayon::prelude::*;
 
+#[allow(clippy::type_complexity)]
 #[derive(Debug)]
 pub struct Graph<T> {
     pub nodes: Arc<RwLock<Vec<Option<Node<T>>>>>,
@@ -22,7 +24,6 @@ pub struct Graph<T> {
 pub struct Node<T> {
     pub id: T,
     pub layer: Option<i32>,
-    // pub name: String,
 }
 
 /// an edge is decribed by the index of the source and target nodes
@@ -43,6 +44,73 @@ impl<T: Eq + Hash + Copy + Send + Sync + std::fmt::Debug> Graph<T> {
             edges: Arc::new(RwLock::new(HashMap::default())),
             node_map: Arc::new(RwLock::new(BiMap::new())),
         }
+    }
+
+    pub fn build_and_add_egde(
+        &mut self,
+        from: T,
+        to: T,
+        weight: Option<f64>,
+        capacity: Option<f64>,
+    ) -> anyhow::Result<()> {
+        let mut node_map = self.node_map.as_ref().write().unwrap();
+        let mut node_list = self.nodes.as_ref().write().unwrap();
+
+        // check if the nodes exist and if not, create them
+        let start_node_index = match node_map.get_by_left(&from) {
+            Some(start_node_index) => *start_node_index,
+            _ => self.add_node(
+                Node {
+                    id: from,
+                    layer: None,
+                },
+                &mut node_list,
+                &mut node_map,
+            )?,
+        };
+        let end_node_index = match node_map.get_by_left(&to) {
+            Some(end_node_index) => *end_node_index,
+            _ => self.add_node(
+                Node {
+                    id: to,
+                    layer: None,
+                },
+                &mut node_list,
+                &mut node_map,
+            )?,
+        };
+        // create the edge
+        // add the edge to the graph
+        self.edges
+            .as_ref()
+            .write()
+            .unwrap()
+            .entry(start_node_index)
+            .or_default()
+            .push(crate::Edge {
+                from: start_node_index,
+                to: end_node_index,
+                weight,
+                capacity,
+            });
+
+        Ok(())
+    }
+
+    /// add a node to the graph, changes the node ID to the index of the node in the vector
+    pub fn add_node(
+        &self,
+        node: Node<T>,
+        node_list: &mut RwLockWriteGuard<Vec<Option<Node<T>>>>,
+        node_map: &mut RwLockWriteGuard<BiHashMap<T, usize>>,
+    ) -> anyhow::Result<usize> {
+        // the vector index will be saved in the node map
+        //let cell: Cell = node.id;
+        let node_idx = node_list.len();
+        // add node to the node_map
+        node_map.insert(node.id, node_idx);
+        node_list.push(Some(node));
+        Ok(node_idx)
     }
 
     /// calculate the directed distance from a set of origins to all nodes in the graph
@@ -120,19 +188,17 @@ impl<T: Eq + Hash + Copy + Send + Sync + std::fmt::Debug> Graph<T> {
                 .pop_front()
                 .ok_or_else(|| anyhow::anyhow!("queue is empty"))?;
 
-
             // get the target of the current edge
             let current_target_idx = current_egde.to;
 
             // distances[current_target_idx] = Some(current_distance + current_egde.weight.unwrap_or(1.0));
             // parents[current_target_idx] = Some(current_egde.from);
 
-
             if let Some(end) = global_target_idx {
                 if &current_target_idx == end {
                     // found the target, backtrace the path
-                    println!("found target: {:?}", current_target_idx);
-                    println!("distance: {}, backtracing path", current_distance);
+                    println!("found target: {current_target_idx:?}",);
+                    println!("distance: {current_distance}, backtracing path",);
 
                     // parents[*end] = Some(current_target_idx);
                     // backtrace the path in parents
@@ -165,7 +231,7 @@ impl<T: Eq + Hash + Copy + Send + Sync + std::fmt::Debug> Graph<T> {
 
     pub fn backtrace(
         &self,
-        parents: &Vec<Option<usize>>,
+        parents: &[Option<usize>],
         target: usize,
         start: usize,
     ) -> anyhow::Result<Vec<T>> {

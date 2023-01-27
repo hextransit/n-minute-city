@@ -22,7 +22,7 @@ fn main() -> anyhow::Result<()> {
         layer: 3,
     };
 
-    println!("start: {:?}, end: {:?}", start, end);
+    println!("start: {start:?}, end: {end:?}");
     let now = Instant::now();
     let (Some(path), _) = graph.bfs(start, Some(end))? else {
         println!("backtracing failed");
@@ -36,7 +36,11 @@ fn main() -> anyhow::Result<()> {
     let now = Instant::now();
     graph.matrix_bfs_distance(vec![start; iterations], None, true);
     let elapsed = now.elapsed().as_micros();
-    println!("time: {:?} µs ({:?} µs /iteration)", elapsed, elapsed / iterations as u128);
+    println!(
+        "time: {:?} µs ({:?} µs /iteration)",
+        elapsed,
+        elapsed / iterations as u128
+    );
 
     Ok(())
 }
