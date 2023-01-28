@@ -146,7 +146,7 @@ impl<T: Eq + Hash + Copy + Send + Sync + std::fmt::Debug> Graph<T> {
     #[allow(clippy::type_complexity)]
     /// perform a breadth first search on the graph
     /// * if `end` is None, the distance to all nodes will be recorded
-    /// * if `end` is Some, only the distances on the visited nodes will be returned,
+    /// * if `end` is Some, only the distance to the target will be returned,
     /// the nodes will be in the order of the path
     pub fn bfs(
         &self,
@@ -200,7 +200,7 @@ impl<T: Eq + Hash + Copy + Send + Sync + std::fmt::Debug> Graph<T> {
                     // backtrace the path in parents
                     let path = self.backtrace(&parents, *end, *start_idx);
 
-                    return Ok((path.ok(), distances));
+                    return Ok((path.ok(), vec![Some(current_distance)]));
                 }
             }
 
