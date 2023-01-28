@@ -197,10 +197,6 @@ impl<T: Eq + Hash + Copy + Send + Sync + std::fmt::Debug> Graph<T> {
 
             if let Some(end) = global_target_idx {
                 if &current_target_idx == end {
-                    // found the target, backtrace the path
-                    println!("found target: {current_target_idx:?}",);
-                    println!("distance: {current_distance}, backtracing path",);
-
                     // backtrace the path in parents
                     let path = self.backtrace(&parents, *end, *start_idx);
 
@@ -229,6 +225,7 @@ impl<T: Eq + Hash + Copy + Send + Sync + std::fmt::Debug> Graph<T> {
         Ok((None, distances))
     }
 
+    /// calculates the shortest path between two nodes using the A* algorithm, returns the path and the distance
     pub fn astar(
         &self,
         start: T,
