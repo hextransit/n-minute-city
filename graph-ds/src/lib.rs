@@ -1,7 +1,8 @@
 pub mod hexagon_graph;
 pub mod u64_graph;
 
-use std::collections::{HashSet, VecDeque};
+use std::cmp::{Ordering, Reverse};
+use std::collections::{BinaryHeap, HashSet, VecDeque};
 use std::hash::Hash;
 use std::sync::RwLockWriteGuard;
 use std::{
@@ -226,6 +227,95 @@ impl<T: Eq + Hash + Copy + Send + Sync + std::fmt::Debug> Graph<T> {
         }
 
         Ok((None, distances))
+    }
+
+    pub fn astar(
+        &self,
+        start: T,
+        end: T,
+        heuristic: impl Fn(&T, &T) -> f64,
+    ) -> anyhow::Result<(Vec<T>, f64)> {
+        #[derive(Debug, Clone, PartialEq)]
+        struct AStarNode {
+            id: usize,
+            f_score: f64,
+        }
+
+        impl Eq for AStarNode {}
+
+        impl Ord for AStarNode {
+            fn cmp(&self, other: &Self) -> Ordering {
+                self.f_score.partial_cmp(&other.f_score).unwrap()
+            }
+        }
+
+        impl PartialOrd for AStarNode {
+            fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+                Some(self.cmp(other))
+            }
+        }
+
+        let mut q: BinaryHeap<Reverse<AStarNode>> = BinaryHeap::new();
+        let nr_nodes = self.nodes.read().unwrap().len();
+        let mut parents: Vec<Option<usize>> = vec![None; nr_nodes];
+        let mut g_score: Vec<Option<f64>> = vec![None; nr_nodes];
+
+        let node_map_access = self.node_map.as_ref().read().unwrap();
+        let node_list_access = self.nodes.as_ref().read().unwrap();
+        let edges_access = self.edges.as_ref().read().unwrap();
+
+        let Some(start_idx) = node_map_access.get_by_left(&start) else {
+            return Err(anyhow::anyhow!("start node not found in node map"));
+        };
+        let Some(end_idx) = node_map_access.get_by_left(&end) else {
+            return Err(anyhow::anyhow!("end node not found in node map"));
+        };
+
+        g_score[*start_idx] = Some(0.0);
+        q.push(Reverse(AStarNode {
+            id: *start_idx,
+            f_score: heuristic(&start, &end),
+        }));
+
+        while !q.is_empty() {
+            let current = q.pop().ok_or(anyhow::anyhow!("queue was empty"))?.0;
+            let current_idx = current.id;
+
+            if current_idx == *end_idx {
+                // found the target, backtrace the path
+                let path = self.backtrace(&parents, *end_idx, *start_idx);
+                return Ok((
+                    path?,
+                    g_score[*end_idx].ok_or(anyhow::anyhow!("target g score was not recorded"))?,
+                ));
+            }
+
+            if let Some(next_edges) = edges_access.get(&current_idx) {
+                for next_edge in next_edges.iter() {
+                    let next_edge_target_idx = next_edge.to;
+                    let tentative_g_score = g_score[current_idx]
+                        .ok_or(anyhow::anyhow!("current g score was not recorded"))?
+                        + next_edge.weight.unwrap_or(1.0);
+
+                    if g_score[next_edge_target_idx].is_none()
+                        || tentative_g_score < g_score[next_edge_target_idx].unwrap()
+                    {
+                        parents[next_edge_target_idx] = Some(current_idx);
+                        g_score[next_edge_target_idx] = Some(tentative_g_score);
+                        q.push(Reverse(AStarNode {
+                            id: next_edge_target_idx,
+                            f_score: tentative_g_score
+                                + heuristic(
+                                    &node_list_access[next_edge_target_idx].as_ref().unwrap().id,
+                                    &node_list_access[current_idx].as_ref().unwrap().id,
+                                ),
+                        }));
+                    }
+                }
+            }
+        }
+
+        Err(anyhow::anyhow!("no path found"))
     }
 
     pub fn backtrace(
