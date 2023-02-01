@@ -43,6 +43,14 @@ pub fn hexagon_graph_from_file(path: &str) -> anyhow::Result<Graph<Cell>> {
     Ok(graph)
 }
 
+pub fn h3_network_from_osm(osm_file_path: &str, osm_filter: Vec<String>) -> anyhow::Result<Graph<H3Cell>> {
+    todo!()
+}
+
+pub fn h3_network_from_gtfs(gtfs_file_path: &str) -> anyhow::Result<Graph<H3Cell>> {
+    todo!()
+}
+
 /// each node is a H3 hexagon cell
 /// this uses a H3 hexagon grid, with additional layering
 impl Graph<H3Cell> {

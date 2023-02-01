@@ -34,7 +34,7 @@ fn main() -> anyhow::Result<()> {
     println!("matrix bfs");
     let iterations = 10000;
     let now = Instant::now();
-    graph.matrix_bfs_distance(vec![start; iterations], None, true);
+    graph.matrix_bfs_distance(vec![start; iterations], true);
     let elapsed = now.elapsed().as_micros();
     println!(
         "time: {:?} µs ({:?} µs /iteration)",

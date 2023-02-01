@@ -47,6 +47,33 @@ impl<T: Eq + Hash + Copy + Send + Sync + std::fmt::Debug> Graph<T> {
         }
     }
 
+    pub fn nr_nodes(&self) -> usize {
+        self.nodes.as_ref().read().unwrap().len()
+    }
+
+    /// adds all nodes and edges from other to self, connects the graphs where they share nodes. Does not remove any nodes or edges.
+    pub fn merge(&mut self, other: &mut Self) -> anyhow::Result<()> {
+        let other_nodes = other.nodes.as_ref().read().unwrap();
+        let other_edges = other.edges.as_ref().read().unwrap();
+
+        other_edges.values().for_each(|edges| {
+            for edge in edges.iter() {
+                let Some(from) = other_nodes.get(edge.from).unwrap() else {
+                    continue;
+                };
+                let Some(to) = other_nodes.get(edge.to).unwrap() else {
+                    continue;
+                };
+                let res = self.build_and_add_egde(from.id, to.id, edge.weight, edge.capacity);
+                if res.is_err() {
+                    println!("error: {res:?}");
+                }
+            }
+        });
+
+        Ok(())
+    }
+
     /// add an edge to the graph
     /// * if the nodes do not exist, they will be created
     /// * and edge can have a weight and capacity
@@ -117,6 +144,27 @@ impl<T: Eq + Hash + Copy + Send + Sync + std::fmt::Debug> Graph<T> {
         Ok(node_idx)
     }
 
+    /// removes a directed edge from the graph
+    pub fn remove_edge(
+        &mut self, 
+        from: T,
+        to: T
+    ) -> anyhow::Result<()> {
+        let node_map = self.node_map.as_ref().read().unwrap();
+        let mut edges = self.edges.as_ref().write().unwrap();
+
+        // get node indices
+        let from = node_map.get_by_left(&from).ok_or(anyhow::anyhow!("node not found"))?;
+        let to = node_map.get_by_left(&to).ok_or(anyhow::anyhow!("node not found"))?;
+
+        // find the edge in edges
+        edges.entry(*from).and_modify(|edges| {
+            edges.retain(|edge| edge.to != *to);
+        });
+
+        Ok(())
+    }
+
     /// calculate the directed distance from a set of origins to all nodes in the graph
     /// * if `infinity` is None, the distance to all nodes will be recorded, otherwise the calculation is cutoff at `infinity`
     ///
@@ -124,7 +172,6 @@ impl<T: Eq + Hash + Copy + Send + Sync + std::fmt::Debug> Graph<T> {
     pub fn matrix_bfs_distance(
         &self,
         origins: Vec<T>,
-        _infinity: Option<f64>,
         force: bool,
     ) -> Vec<Vec<Option<f64>>> {
         if force {
