@@ -1,4 +1,5 @@
 pub mod cell;
+pub mod gtfs;
 pub mod h3cell;
 
 use std::collections::HashSet;
@@ -43,11 +44,14 @@ pub fn hexagon_graph_from_file(path: &str) -> anyhow::Result<Graph<Cell>> {
     Ok(graph)
 }
 
-pub fn h3_network_from_osm(osm_file_path: &str, osm_filter: Vec<String>) -> anyhow::Result<Graph<H3Cell>> {
+pub fn h3_network_from_osm(
+    osm_url: &str,
+    osm_filter: Vec<String>,
+) -> anyhow::Result<Graph<H3Cell>> {
     todo!()
 }
 
-pub fn h3_network_from_gtfs(gtfs_file_path: &str) -> anyhow::Result<Graph<H3Cell>> {
+pub fn h3_network_from_gtfs(gtfs_url: &str) -> anyhow::Result<Graph<H3Cell>> {
     todo!()
 }
 
