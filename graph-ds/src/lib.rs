@@ -145,17 +145,17 @@ impl<T: Eq + Hash + Copy + Send + Sync + std::fmt::Debug> Graph<T> {
     }
 
     /// removes a directed edge from the graph
-    pub fn remove_edge(
-        &mut self, 
-        from: T,
-        to: T
-    ) -> anyhow::Result<()> {
+    pub fn remove_edge(&mut self, from: T, to: T) -> anyhow::Result<()> {
         let node_map = self.node_map.as_ref().read().unwrap();
         let mut edges = self.edges.as_ref().write().unwrap();
 
         // get node indices
-        let from = node_map.get_by_left(&from).ok_or(anyhow::anyhow!("node not found"))?;
-        let to = node_map.get_by_left(&to).ok_or(anyhow::anyhow!("node not found"))?;
+        let from = node_map
+            .get_by_left(&from)
+            .ok_or(anyhow::anyhow!("node not found"))?;
+        let to = node_map
+            .get_by_left(&to)
+            .ok_or(anyhow::anyhow!("node not found"))?;
 
         // find the edge in edges
         edges.entry(*from).and_modify(|edges| {
@@ -169,11 +169,7 @@ impl<T: Eq + Hash + Copy + Send + Sync + std::fmt::Debug> Graph<T> {
     /// * if `infinity` is None, the distance to all nodes will be recorded, otherwise the calculation is cutoff at `infinity`
     ///
     /// this function is parallelized using rayon
-    pub fn matrix_bfs_distance(
-        &self,
-        origins: Vec<T>,
-        force: bool,
-    ) -> Vec<Vec<Option<f64>>> {
+    pub fn matrix_bfs_distance(&self, origins: Vec<T>, force: bool) -> Vec<Vec<Option<f64>>> {
         if force {
             origins
                 .into_par_iter()
