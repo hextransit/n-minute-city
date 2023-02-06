@@ -1,0 +1,27 @@
+name: graphs
+
+channels:
+    - conda-forge
+
+dependencies:
+    - python=3.10
+    - geopandas
+    - matplotlib
+    - numpy
+    - pandas
+    - plotly
+    - graph-tool
+    - pydeck
+    - h3-py
+    - pip
+    - pip:
+        - pyrosm
+        - pyproj
+        - shapely
+        - tqdm
+        - polars
+        - gtfs_kit
+        - h3ronpy
+        - pyarrow
+        - seaborn
+        - lets-plot

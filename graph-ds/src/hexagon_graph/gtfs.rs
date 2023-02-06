@@ -1,14 +1,22 @@
+use std::collections::HashMap;
+
 use h3o::CellIndex;
 use rayon::prelude::*;
 
-pub fn process_gtfs(url: &str, h3_resolution: h3o::Resolution) -> anyhow::Result<()> {
+#[allow(clippy::type_complexity)]
+pub fn process_gtfs(url: &str, h3_resolution: h3o::Resolution) -> anyhow::Result<Vec<((usize, CellIndex, CellIndex), f64)>> {
     // let gtfs_url = "https://www.rejseplanen.info/labs/GTFS.zip";
 
     let feed = gtfs_structures::Gtfs::new(url)?;
-    let trips = feed.trips;
+    // let trips = feed.trips;
+
+    let route_data: HashMap<String, usize> = feed.routes.keys().enumerate().par_bridge().map(|(index, route)| {
+        (route.clone(), index)
+    }).collect();
 
     // for each trip, get stop sequence and travel times between stops
-    let edge_data = trips
+    // collects a vec of unique edges, identified by (route_id, start, end) and weight = travel time
+    let edge_data = feed.trips
         .into_values()
         .par_bridge()
         .flat_map(|trip| {
@@ -39,13 +47,13 @@ pub fn process_gtfs(url: &str, h3_resolution: h3o::Resolution) -> anyhow::Result
                 .map(|window| {
                     let (start, end) = (window[0], window[1]);
                     let weight = (end.3.unwrap() - start.2.unwrap()) as f64;
-                    (route_id.clone(), start.0, end.0, weight)
+                    ((*route_data.get(&route_id).unwrap_or(&0), start.0, end.0), weight)
                 })
-                .collect::<Vec<_>>();
+                .collect::<HashMap<_, _>>();
 
             edges
         })
         .collect::<Vec<_>>();
 
-    Ok(())
+    Ok(edge_data)
 }
