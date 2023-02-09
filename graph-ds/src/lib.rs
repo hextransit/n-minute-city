@@ -17,7 +17,7 @@ use rayon::prelude::*;
 #[derive(Debug)]
 pub struct Graph<T> {
     pub nodes: Arc<RwLock<Vec<Option<Node<T>>>>>,
-    pub edges: Arc<RwLock<HashMap<usize, Vec<Edge>, nohash::BuildNoHashHasher<usize>>>>,
+    pub edges: Arc<RwLock<HashMap<usize, HashSet<Edge>, nohash::BuildNoHashHasher<usize>>>>,
     pub node_map: Arc<RwLock<BiMap<T, usize>>>,
 }
 
@@ -36,6 +36,22 @@ pub struct Edge {
     pub to: usize,
     pub weight: Option<f64>,
     pub capacity: Option<f64>,
+}
+
+impl PartialEq for Edge {
+    fn eq(&self, other: &Self) -> bool {
+        self.from == other.from && self.to == other.to
+    }
+}
+
+impl Eq for Edge {}
+
+impl Hash for Edge {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.from.hash(state);
+        (self.from >= self.to).hash(state);
+        self.to.hash(state);
+    }
 }
 
 impl<T: Eq + Hash + Copy + Send + Sync + std::fmt::Debug> Graph<T> {
@@ -118,7 +134,7 @@ impl<T: Eq + Hash + Copy + Send + Sync + std::fmt::Debug> Graph<T> {
             .unwrap()
             .entry(start_node_index)
             .or_default()
-            .push(crate::Edge {
+            .insert(crate::Edge {
                 from: start_node_index,
                 to: end_node_index,
                 weight,

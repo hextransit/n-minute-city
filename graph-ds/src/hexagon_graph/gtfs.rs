@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use h3o::CellIndex;
 use rayon::prelude::*;
 
+// TODO: calculate frequencies at each stop
 #[allow(clippy::type_complexity)]
 pub fn process_gtfs(url: &str, h3_resolution: h3o::Resolution) -> anyhow::Result<Vec<((usize, CellIndex, CellIndex), f64)>> {
     // let gtfs_url = "https://www.rejseplanen.info/labs/GTFS.zip";

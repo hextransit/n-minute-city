@@ -1,6 +1,7 @@
 pub mod cell;
 pub mod gtfs;
 pub mod h3cell;
+pub mod osm;
 
 use std::collections::HashSet;
 
@@ -52,7 +53,32 @@ pub fn h3_network_from_osm(
 }
 
 pub fn h3_network_from_gtfs(gtfs_url: &str) -> anyhow::Result<Graph<H3Cell>> {
-    todo!()
+    let edge_data = gtfs::process_gtfs(gtfs_url, h3o::Resolution::Twelve)?;
+
+    let mut graph = Graph::<H3Cell>::new();
+    for ((layer, from, to), weight) in edge_data {
+        let from_cell = H3Cell {
+            cell: from,
+            layer: layer as i16,
+        };
+        let to_cell = H3Cell {
+            cell: to,
+            layer: layer as i16,
+        };
+        let base_cell = H3Cell {
+            cell: from,
+            layer: -1,
+        };
+        // the transit edge
+        graph.build_and_add_egde(from_cell, to_cell, Some(weight), None)?;
+        // connections from the base layer
+        graph.build_and_add_egde(base_cell, from_cell, Some(1.0), None)?;
+        graph.build_and_add_egde(base_cell, to_cell, Some(1.0), None)?;
+        // connections to the base layer
+        graph.build_and_add_egde(from_cell, base_cell, Some(1.0), None)?;
+        graph.build_and_add_egde(to_cell, base_cell, Some(1.0), None)?;
+    }
+    Ok(graph)
 }
 
 /// each node is a H3 hexagon cell

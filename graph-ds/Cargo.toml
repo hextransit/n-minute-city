@@ -19,3 +19,4 @@ nohash = "0.2.0"
 h3o = "0.3.0"
 
 gtfs-structures = "0.33.0"
+osmpbf = "0.3.0"
