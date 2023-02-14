@@ -5,19 +5,31 @@ use rayon::prelude::*;
 
 // TODO: calculate frequencies at each stop
 #[allow(clippy::type_complexity)]
-pub fn process_gtfs(url: &str, h3_resolution: h3o::Resolution) -> anyhow::Result<Vec<((usize, CellIndex, CellIndex), f64)>> {
+pub fn process_gtfs(
+    url: &str,
+    h3_resolution: h3o::Resolution,
+) -> anyhow::Result<Vec<((usize, CellIndex, CellIndex), f64)>> {
     // let gtfs_url = "https://www.rejseplanen.info/labs/GTFS.zip";
+
+    println!("getting GTFS feed from {url}");
 
     let feed = gtfs_structures::Gtfs::new(url)?;
     // let trips = feed.trips;
 
-    let route_data: HashMap<String, usize> = feed.routes.keys().enumerate().par_bridge().map(|(index, route)| {
-        (route.clone(), index)
-    }).collect();
+    let route_data: HashMap<String, usize> = feed
+        .routes
+        .keys()
+        .enumerate()
+        .par_bridge()
+        .map(|(index, route)| (route.clone(), index))
+        .collect();
+
+    println!("routes: {}", route_data.len());
 
     // for each trip, get stop sequence and travel times between stops
     // collects a vec of unique edges, identified by (route_id, start, end) and weight = travel time
-    let edge_data = feed.trips
+    let edge_data = feed
+        .trips
         .into_values()
         .par_bridge()
         .flat_map(|trip| {
@@ -48,7 +60,10 @@ pub fn process_gtfs(url: &str, h3_resolution: h3o::Resolution) -> anyhow::Result
                 .map(|window| {
                     let (start, end) = (window[0], window[1]);
                     let weight = (end.3.unwrap() - start.2.unwrap()) as f64;
-                    ((*route_data.get(&route_id).unwrap_or(&0), start.0, end.0), weight)
+                    (
+                        (*route_data.get(&route_id).unwrap_or(&0), start.0, end.0),
+                        weight,
+                    )
                 })
                 .collect::<HashMap<_, _>>();
 

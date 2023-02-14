@@ -100,8 +100,12 @@ impl<T: Eq + Hash + Copy + Send + Sync + std::fmt::Debug> Graph<T> {
         weight: Option<f64>,
         capacity: Option<f64>,
     ) -> anyhow::Result<()> {
-        let mut node_map = self.node_map.as_ref().write().unwrap();
-        let mut node_list = self.nodes.as_ref().write().unwrap();
+        let Ok( mut node_map) = self.node_map.as_ref().write() else {
+            return Err(anyhow::anyhow!("could not get write lock on node_map"));
+        };
+        let Ok( mut node_list) = self.nodes.as_ref().write() else {
+            return Err(anyhow::anyhow!("could not get write lock on node_list"));
+        };
 
         // check if the nodes exist and if not, create them
         let start_node_index = match node_map.get_by_left(&from) {
@@ -126,12 +130,17 @@ impl<T: Eq + Hash + Copy + Send + Sync + std::fmt::Debug> Graph<T> {
                 &mut node_map,
             )?,
         };
+
+        if start_node_index == end_node_index {
+            return Ok(());
+        };
+
+        let Ok( mut edges) = self.edges.as_ref().write() else {
+            return Err(anyhow::anyhow!("could not get write lock on edges"));
+        };
         // create the edge
         // add the edge to the graph
-        self.edges
-            .as_ref()
-            .write()
-            .unwrap()
+        edges
             .entry(start_node_index)
             .or_default()
             .insert(crate::Edge {

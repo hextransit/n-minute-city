@@ -8,7 +8,7 @@ use std::collections::HashSet;
 use crate::{Edge, Graph};
 use cell::Cell;
 
-use self::{cell::Direction, h3cell::H3Cell};
+use self::{cell::Direction, h3cell::H3Cell, osm::{OSMLayer, process_osm_pbf}};
 
 /// each node is a hexagon cell
 /// this uses a simple hexagon grid, which does support layering
@@ -45,11 +45,30 @@ pub fn hexagon_graph_from_file(path: &str) -> anyhow::Result<Graph<Cell>> {
     Ok(graph)
 }
 
-pub fn h3_network_from_osm(
-    osm_url: &str,
-    osm_filter: Vec<String>,
-) -> anyhow::Result<Graph<H3Cell>> {
-    todo!()
+pub fn h3_network_from_osm(osm_url: &str, layer: OSMLayer) -> anyhow::Result<Graph<H3Cell>> {
+    let edge_data = process_osm_pbf(osm_url, layer, h3o::Resolution::Twelve)?;
+
+    let mut graph = Graph::<H3Cell>::new();
+
+    let layer_id : i16 = match layer {
+        OSMLayer::Cycling => -2,
+        OSMLayer::Walking => -1,
+    };
+
+    for ((_, from, to), weight) in edge_data {
+        let from_cell = H3Cell {
+            cell: from,
+            layer: layer_id,
+        };
+        let to_cell = H3Cell {
+            cell: to,
+            layer: layer_id,
+        };
+        // connect the two cells in both directions
+        graph.build_and_add_egde(from_cell, to_cell, Some(weight), None)?;
+        graph.build_and_add_egde(to_cell, from_cell, Some(weight), None)?;
+    }
+    Ok(graph)
 }
 
 pub fn h3_network_from_gtfs(gtfs_url: &str) -> anyhow::Result<Graph<H3Cell>> {
@@ -99,5 +118,25 @@ impl Graph<H3Cell> {
             .cell
             .edge(end.cell)
             .ok_or(anyhow::anyhow!("nodes are not neighbors in the H3 space"))
+    }
+
+    #[allow(clippy::type_complexity)]
+    pub fn get_plot_data(&self) -> anyhow::Result<Vec<((f32, f32, f32), (f32, f32, f32))>> {
+        let edges = &self.edges.as_ref().read().unwrap();
+        let nodes = &self.nodes.as_ref().read().unwrap();
+        let plot_data = edges.iter().flat_map(|(key, edges)| {
+            edges.iter().flat_map(move |edge| {
+                if let (Some(Some(start)),Some(Some(end))) = (nodes.get(*key), nodes.get(edge.to)) {
+                    let start_coords = h3o::LatLng::from(start.id.cell);
+                    let start_plot = (start_coords.lat() as f32, start_coords.lng() as f32, start.id.layer as f32);
+                    let end_coords = h3o::LatLng::from(end.id.cell);
+                    let end_plot = (end_coords.lat() as f32, end_coords.lng() as f32, end.id.layer as f32);
+                    Ok((start_plot, end_plot))
+                } else {
+                    Err(anyhow::anyhow!("node not found"))
+                }
+            })
+        }).collect::<Vec<_>>();
+        Ok(plot_data)
     }
 }
