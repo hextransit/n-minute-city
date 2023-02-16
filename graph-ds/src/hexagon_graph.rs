@@ -128,9 +128,9 @@ impl Graph<H3Cell> {
             edges.iter().flat_map(move |edge| {
                 if let (Some(Some(start)),Some(Some(end))) = (nodes.get(*key), nodes.get(edge.to)) {
                     let start_coords = h3o::LatLng::from(start.id.cell);
-                    let start_plot = (start_coords.lat() as f32, start_coords.lng() as f32, start.id.layer as f32);
+                    let start_plot = (start_coords.lat() as f32, start.id.layer.min(-1) as f32, -start_coords.lng() as f32);
                     let end_coords = h3o::LatLng::from(end.id.cell);
-                    let end_plot = (end_coords.lat() as f32, end_coords.lng() as f32, end.id.layer as f32);
+                    let end_plot = (end_coords.lat() as f32, end.id.layer.min(-1) as f32, -end_coords.lng() as f32);
                     Ok((start_plot, end_plot))
                 } else {
                     Err(anyhow::anyhow!("node not found"))

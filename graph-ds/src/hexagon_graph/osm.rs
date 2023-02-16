@@ -116,8 +116,8 @@ pub fn tag_value_matches(tag: &str, value: &str, layer: &OSMLayer) -> bool {
                 false
             }
         }
-        "bycicle_road" => true,
-        "bycicle" => true,
+        "bycicle_road" => layer == &OSMLayer::Cycling,
+        "bycicle" => layer == &OSMLayer::Cycling,
         _ => false,
     }
 }

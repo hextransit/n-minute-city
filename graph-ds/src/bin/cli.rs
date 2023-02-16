@@ -1,11 +1,12 @@
 use graph_ds::{
     hexagon_graph::{h3_network_from_osm, osm::OSMLayer, h3_network_from_gtfs},
 };
+use plotters::prelude::*;
 use std::time::Instant;
 
 fn main() -> anyhow::Result<()> {
     let start = Instant::now();
-    let mut osm_graph = h3_network_from_osm("resources/copenhagen-with-ways.osm.pbf", OSMLayer::Walking).unwrap();
+    let mut osm_graph = h3_network_from_osm("resources/denmark-with-ways.osm.pbf", OSMLayer::Walking).unwrap();
     println!("osm graph created with {} nodes in {} s", osm_graph.nr_nodes(), start.elapsed().as_secs());
 
     let start = Instant::now();
@@ -16,6 +17,8 @@ fn main() -> anyhow::Result<()> {
     osm_graph.merge(&mut gtfs_graph)?;
 
     println!("merged graph created with {} nodes in {} s", osm_graph.nr_nodes(), start.elapsed().as_secs());
+
+    plot_png(osm_graph.get_plot_data().unwrap());
 
     Ok(())
 
@@ -58,3 +61,50 @@ fn main() -> anyhow::Result<()> {
 
     // Ok(())
 }
+
+fn plot_png(plot_data: Vec<((f32, f32, f32), (f32, f32, f32))>) -> Result<(), Box<dyn std::error::Error>> {
+    println!("plotting {} edges, e.g. {:?}", plot_data.len(), plot_data.get(0));
+
+    let (x_min, x_max, y_min, y_max, z_min, z_max) = plot_data.iter().fold(
+        (f32::MAX, f32::MIN, f32::MAX, f32::MIN, f32::MAX, f32::MIN),
+        |(x_min, x_max, y_min, y_max, z_min, z_max), ((x1, y1, z1), (x2, y2, z2))| {
+            (
+                x_min.min(*x1).min(*x2),
+                x_max.max(*x1).max(*x2),
+                y_min.min(*y1).min(*y2),
+                y_max.max(*y1).max(*y2),
+                z_min.min(*z1).min(*z2),
+                z_max.max(*z1).max(*z2),
+            )
+        },
+    );
+
+    println!("x: {} .. {}", x_min, x_max);
+    println!("y: {} .. {}", y_min, y_max);
+    println!("z: {} .. {}", z_min, z_max);
+
+    let root = plotters::backend::BitMapBackend::new("test.png", (4096, 4096)).into_drawing_area();
+
+    let mut chart = ChartBuilder::on(&root)
+        .margin(10)
+        .x_label_area_size(0)
+        .y_label_area_size(0)
+        .build_cartesian_3d(x_max .. x_min, y_min .. y_max, z_min .. z_max)?;
+
+    chart.with_projection(|mut pb| {
+        pb.pitch = 1.0;
+        pb.yaw = 1.0;
+        pb.scale = 1.0;
+        pb.into_matrix()
+    });	
+        
+    chart.draw_series(
+        plot_data.into_iter().map(|data| {
+            PathElement::new(vec![data.0, data.1], RED.mix(0.5))
+        })
+    )?;
+
+    root.present()?;
+    Ok(())
+}
+
