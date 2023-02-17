@@ -1,22 +1,33 @@
-use graph_ds::{
-    hexagon_graph::{h3_network_from_osm, osm::OSMLayer, h3_network_from_gtfs},
-};
+use graph_ds::hexagon_graph::{h3_network_from_gtfs, h3_network_from_osm, osm::OSMLayer};
 use plotters::prelude::*;
 use std::time::Instant;
 
 fn main() -> anyhow::Result<()> {
     let start = Instant::now();
-    let mut osm_graph = h3_network_from_osm("resources/denmark-with-ways.osm.pbf", OSMLayer::Walking).unwrap();
-    println!("osm graph created with {} nodes in {} s", osm_graph.nr_nodes(), start.elapsed().as_secs());
+    let mut osm_graph =
+        h3_network_from_osm("resources/denmark-with-ways.osm.pbf", OSMLayer::Walking).unwrap();
+    println!(
+        "osm graph created with {} nodes in {} s",
+        osm_graph.nr_nodes(),
+        start.elapsed().as_secs()
+    );
 
     let start = Instant::now();
     let mut gtfs_graph = h3_network_from_gtfs("resources/rejseplanen.zip").unwrap();
-    println!("gtfs graph created with {} nodes in {} s", gtfs_graph.nr_nodes(), start.elapsed().as_secs());
+    println!(
+        "gtfs graph created with {} nodes in {} s",
+        gtfs_graph.nr_nodes(),
+        start.elapsed().as_secs()
+    );
 
     let start = Instant::now();
     osm_graph.merge(&mut gtfs_graph)?;
 
-    println!("merged graph created with {} nodes in {} s", osm_graph.nr_nodes(), start.elapsed().as_secs());
+    println!(
+        "merged graph created with {} nodes in {} s",
+        osm_graph.nr_nodes(),
+        start.elapsed().as_secs()
+    );
 
     plot_png(osm_graph.get_plot_data().unwrap());
 
@@ -62,8 +73,14 @@ fn main() -> anyhow::Result<()> {
     // Ok(())
 }
 
-fn plot_png(plot_data: Vec<((f32, f32, f32), (f32, f32, f32))>) -> Result<(), Box<dyn std::error::Error>> {
-    println!("plotting {} edges, e.g. {:?}", plot_data.len(), plot_data.get(0));
+fn plot_png(
+    plot_data: Vec<((f32, f32, f32), (f32, f32, f32))>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    println!(
+        "plotting {} edges, e.g. {:?}",
+        plot_data.len(),
+        plot_data.get(0)
+    );
 
     let (x_min, x_max, y_min, y_max, z_min, z_max) = plot_data.iter().fold(
         (f32::MAX, f32::MIN, f32::MAX, f32::MIN, f32::MAX, f32::MIN),
@@ -89,22 +106,23 @@ fn plot_png(plot_data: Vec<((f32, f32, f32), (f32, f32, f32))>) -> Result<(), Bo
         .margin(10)
         .x_label_area_size(0)
         .y_label_area_size(0)
-        .build_cartesian_3d(x_max .. x_min, y_min .. y_max, z_min .. z_max)?;
+        .build_cartesian_3d(x_min..x_max, y_min..y_max, z_min..z_max)?;
 
     chart.with_projection(|mut pb| {
-        pb.pitch = 1.0;
-        pb.yaw = 1.0;
-        pb.scale = 1.0;
+        pb.pitch = 0.2;
+        pb.yaw = 0.2;
+        pb.scale = 1.2;
         pb.into_matrix()
-    });	
-        
-    chart.draw_series(
-        plot_data.into_iter().map(|data| {
+    });
+
+    chart.draw_series(plot_data.into_iter().map(|data| {
+        if data.0 .1 != data.1 .1 {
+            PathElement::new(vec![data.0, data.1], BLUE.mix(0.01))
+        } else {
             PathElement::new(vec![data.0, data.1], RED.mix(0.5))
-        })
-    )?;
+        }
+    }))?;
 
     root.present()?;
     Ok(())
 }
-

@@ -8,7 +8,11 @@ use std::collections::HashSet;
 use crate::{Edge, Graph};
 use cell::Cell;
 
-use self::{cell::Direction, h3cell::H3Cell, osm::{OSMLayer, process_osm_pbf}};
+use self::{
+    cell::Direction,
+    h3cell::H3Cell,
+    osm::{process_osm_pbf, OSMLayer},
+};
 
 /// each node is a hexagon cell
 /// this uses a simple hexagon grid, which does support layering
@@ -50,7 +54,7 @@ pub fn h3_network_from_osm(osm_url: &str, layer: OSMLayer) -> anyhow::Result<Gra
 
     let mut graph = Graph::<H3Cell>::new();
 
-    let layer_id : i16 = match layer {
+    let layer_id: i16 = match layer {
         OSMLayer::Cycling => -2,
         OSMLayer::Walking => -1,
     };
@@ -124,19 +128,32 @@ impl Graph<H3Cell> {
     pub fn get_plot_data(&self) -> anyhow::Result<Vec<((f32, f32, f32), (f32, f32, f32))>> {
         let edges = &self.edges.as_ref().read().unwrap();
         let nodes = &self.nodes.as_ref().read().unwrap();
-        let plot_data = edges.iter().flat_map(|(key, edges)| {
-            edges.iter().flat_map(move |edge| {
-                if let (Some(Some(start)),Some(Some(end))) = (nodes.get(*key), nodes.get(edge.to)) {
-                    let start_coords = h3o::LatLng::from(start.id.cell);
-                    let start_plot = (start_coords.lat() as f32, start.id.layer.min(-1) as f32, -start_coords.lng() as f32);
-                    let end_coords = h3o::LatLng::from(end.id.cell);
-                    let end_plot = (end_coords.lat() as f32, end.id.layer.min(-1) as f32, -end_coords.lng() as f32);
-                    Ok((start_plot, end_plot))
-                } else {
-                    Err(anyhow::anyhow!("node not found"))
-                }
+        let plot_data = edges
+            .iter()
+            .flat_map(|(key, edges)| {
+                edges.iter().flat_map(move |edge| {
+                    if let (Some(Some(start)), Some(Some(end))) =
+                        (nodes.get(*key), nodes.get(edge.to))
+                    {
+                        let start_coords = h3o::LatLng::from(start.id.cell);
+                        let start_plot = (
+                            start_coords.lat() as f32,
+                            start.id.layer as f32 / 100.0,
+                            start_coords.lng() as f32,
+                        );
+                        let end_coords = h3o::LatLng::from(end.id.cell);
+                        let end_plot = (
+                            end_coords.lat() as f32,
+                            end.id.layer as f32 / 100.0,
+                            end_coords.lng() as f32,
+                        );
+                        Ok((start_plot, end_plot))
+                    } else {
+                        Err(anyhow::anyhow!("node not found"))
+                    }
+                })
             })
-        }).collect::<Vec<_>>();
+            .collect::<Vec<_>>();
         Ok(plot_data)
     }
 }
