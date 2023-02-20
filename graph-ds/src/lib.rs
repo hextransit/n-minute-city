@@ -11,13 +11,15 @@ use std::{
 };
 
 use bimap::{BiHashMap, BiMap};
+use hexagon_graph::PyH3Graph;
+use pyo3::prelude::*;
 use rayon::prelude::*;
 
 #[allow(clippy::type_complexity)]
 #[derive(Debug)]
 pub struct Graph<T> {
     pub nodes: Arc<RwLock<Vec<Option<Node<T>>>>>,
-    pub edges: Arc<RwLock<HashMap<usize, Vec<Edge>, nohash::BuildNoHashHasher<usize>>>>,
+    pub edges: Arc<RwLock<HashMap<usize, HashSet<Edge>, nohash::BuildNoHashHasher<usize>>>>,
     pub node_map: Arc<RwLock<BiMap<T, usize>>>,
 }
 
@@ -36,6 +38,22 @@ pub struct Edge {
     pub to: usize,
     pub weight: Option<f64>,
     pub capacity: Option<f64>,
+}
+
+impl PartialEq for Edge {
+    fn eq(&self, other: &Self) -> bool {
+        self.from == other.from && self.to == other.to
+    }
+}
+
+impl Eq for Edge {}
+
+impl Hash for Edge {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.from.hash(state);
+        (self.from >= self.to).hash(state);
+        self.to.hash(state);
+    }
 }
 
 impl<T: Eq + Hash + Copy + Send + Sync + std::fmt::Debug> Graph<T> {
@@ -84,8 +102,12 @@ impl<T: Eq + Hash + Copy + Send + Sync + std::fmt::Debug> Graph<T> {
         weight: Option<f64>,
         capacity: Option<f64>,
     ) -> anyhow::Result<()> {
-        let mut node_map = self.node_map.as_ref().write().unwrap();
-        let mut node_list = self.nodes.as_ref().write().unwrap();
+        let Ok( mut node_map) = self.node_map.as_ref().write() else {
+            return Err(anyhow::anyhow!("could not get write lock on node_map"));
+        };
+        let Ok( mut node_list) = self.nodes.as_ref().write() else {
+            return Err(anyhow::anyhow!("could not get write lock on node_list"));
+        };
 
         // check if the nodes exist and if not, create them
         let start_node_index = match node_map.get_by_left(&from) {
@@ -110,15 +132,20 @@ impl<T: Eq + Hash + Copy + Send + Sync + std::fmt::Debug> Graph<T> {
                 &mut node_map,
             )?,
         };
+
+        if start_node_index == end_node_index {
+            return Ok(());
+        };
+
+        let Ok( mut edges) = self.edges.as_ref().write() else {
+            return Err(anyhow::anyhow!("could not get write lock on edges"));
+        };
         // create the edge
         // add the edge to the graph
-        self.edges
-            .as_ref()
-            .write()
-            .unwrap()
+        edges
             .entry(start_node_index)
             .or_default()
-            .push(crate::Edge {
+            .insert(crate::Edge {
                 from: start_node_index,
                 to: end_node_index,
                 weight,
@@ -169,11 +196,16 @@ impl<T: Eq + Hash + Copy + Send + Sync + std::fmt::Debug> Graph<T> {
     /// * if `infinity` is None, the distance to all nodes will be recorded, otherwise the calculation is cutoff at `infinity`
     ///
     /// this function is parallelized using rayon
-    pub fn matrix_bfs_distance(&self, origins: Vec<T>, force: bool) -> Vec<Vec<Option<f64>>> {
+    pub fn matrix_bfs_distance(
+        &self,
+        origins: Vec<T>,
+        destinations: Option<Vec<T>>,
+        force: bool,
+    ) -> Vec<Vec<Option<f64>>> {
         if force {
             origins
                 .into_par_iter()
-                .flat_map(|s| self.bfs(s, None).map(|res| res.1))
+                .flat_map(|s| self.bfs(s, None, &destinations).map(|res| res.1))
                 .collect()
         } else {
             // removes duplicates before iteration
@@ -181,7 +213,7 @@ impl<T: Eq + Hash + Copy + Send + Sync + std::fmt::Debug> Graph<T> {
                 .into_iter()
                 .collect::<HashSet<T>>()
                 .into_par_iter()
-                .flat_map(|s| self.bfs(s, None).map(|res| res.1))
+                .flat_map(|s| self.bfs(s, None, &destinations).map(|res| res.1))
                 .collect()
         }
     }
@@ -195,9 +227,12 @@ impl<T: Eq + Hash + Copy + Send + Sync + std::fmt::Debug> Graph<T> {
         &self,
         start: T,
         end: Option<T>,
+        end_list: &Option<Vec<T>>,
     ) -> anyhow::Result<(Option<Vec<T>>, Vec<Option<f64>>)> {
         let mut q: VecDeque<(f64, &Edge)> = VecDeque::new();
-        let nr_nodes = self.nodes.read().unwrap().len();
+
+        let nodes_access = self.nodes.read().unwrap();
+        let nr_nodes = nodes_access.len();
         let mut explored = vec![false; nr_nodes];
         let mut distances: Vec<Option<f64>> = vec![None; nr_nodes];
         let mut parents: Vec<Option<usize>> = vec![None; nr_nodes];
@@ -210,6 +245,15 @@ impl<T: Eq + Hash + Copy + Send + Sync + std::fmt::Debug> Graph<T> {
 
         let global_target_idx = if let Some(end) = &end {
             node_map_access.get_by_left(end)
+        } else {
+            None
+        };
+
+        let global_target_list = if let Some(end_list) = end_list {
+            end_list
+                .iter()
+                .map(|end| node_map_access.get_by_left(end))
+                .collect::<Option<HashSet<_>>>()
         } else {
             None
         };
@@ -230,6 +274,8 @@ impl<T: Eq + Hash + Copy + Send + Sync + std::fmt::Debug> Graph<T> {
                 q.push_back((edge_length, edge));
             });
 
+        let mut end_distances: HashMap<T, f64> = HashMap::new();
+
         while !q.is_empty() {
             let (current_distance, current_egde) = q
                 .pop_front()
@@ -244,6 +290,14 @@ impl<T: Eq + Hash + Copy + Send + Sync + std::fmt::Debug> Graph<T> {
                     let path = self.backtrace(&parents, *end, *start_idx);
 
                     return Ok((path.ok(), vec![Some(current_distance)]));
+                }
+            }
+
+            if let Some(target_list) = &global_target_list {
+                if target_list.contains(&current_egde.to) {
+                    if let Some(Some(node)) = nodes_access.get(current_egde.to) {
+                        end_distances.insert(node.id, current_distance);
+                    }
                 }
             }
 
@@ -263,6 +317,11 @@ impl<T: Eq + Hash + Copy + Send + Sync + std::fmt::Debug> Graph<T> {
                     }
                 }
             }
+        }
+
+        if end_list.is_some() {
+            let distances = end_distances.into_values().map(Some).collect();
+            return Ok((None, distances));
         }
 
         Ok((None, distances))
@@ -386,4 +445,11 @@ impl<T: Eq + Hash + Copy + Send + Sync + std::fmt::Debug> Default for Graph<T> {
     fn default() -> Self {
         Self::new()
     }
+}
+
+#[pymodule]
+fn graph_ds(_py: Python, m: &PyModule) -> PyResult<()> {
+    m.add_class::<PyH3Graph>()?;
+
+    Ok(())
 }

@@ -6,10 +6,16 @@ edition = "2021"
 [[bin]]
 name = "cli"
 
+
+[lib]
+name = "graph_ds"
+crate-type = ["cdylib", "lib"]
+
 [dependencies]
 anyhow = "1.0"
 bimap = "0.6.2"
 rayon = "1.6.1"
+time = "0.3.18"
 
 serde = { version = "1.0.147", features = ["derive"] }
 rmp-serde = "1.1.1"
@@ -19,3 +25,13 @@ nohash = "0.2.0"
 h3o = "0.3.0"
 
 gtfs-structures = "0.33.0"
+osmpbf = "0.3.0"
+
+plotters = "0.3.3"
+
+pyo3 = { version = "0.17.2", optional = true, features = ["extension-module"] }
+
+[features]
+default = ["pyo3"]
+pyo3 = ["dep:pyo3"]
+

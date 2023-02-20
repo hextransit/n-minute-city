@@ -24,4 +24,4 @@ dependencies:
         - h3ronpy
         - pyarrow
         - seaborn
-        - lets-plot
+        - lets_plot
