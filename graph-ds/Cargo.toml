@@ -6,6 +6,11 @@ edition = "2021"
 [[bin]]
 name = "cli"
 
+
+[lib]
+name = "graph_ds"
+crate-type = ["cdylib", "lib"]
+
 [dependencies]
 anyhow = "1.0"
 bimap = "0.6.2"
@@ -23,3 +28,10 @@ gtfs-structures = "0.33.0"
 osmpbf = "0.3.0"
 
 plotters = "0.3.3"
+
+pyo3 = { version = "0.17.2", optional = true, features = ["extension-module"] }
+
+[features]
+default = ["pyo3"]
+pyo3 = ["dep:pyo3"]
+

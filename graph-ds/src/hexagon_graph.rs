@@ -3,9 +3,10 @@ pub mod gtfs;
 pub mod h3cell;
 pub mod osm;
 
-use std::collections::HashSet;
+use std::{collections::HashSet, sync::RwLockReadGuard, time::Instant};
 
 use crate::{Edge, Graph};
+use bimap::BiHashMap;
 use cell::Cell;
 
 use self::{
@@ -13,6 +14,8 @@ use self::{
     h3cell::H3Cell,
     osm::{process_osm_pbf, OSMLayer},
 };
+
+use pyo3::prelude::*;
 
 /// each node is a hexagon cell
 /// this uses a simple hexagon grid, which does support layering
@@ -71,6 +74,22 @@ pub fn h3_network_from_osm(osm_url: &str, layer: OSMLayer) -> anyhow::Result<Gra
         // connect the two cells in both directions
         graph.build_and_add_egde(from_cell, to_cell, Some(weight), None)?;
         graph.build_and_add_egde(to_cell, from_cell, Some(weight), None)?;
+
+        if layer == OSMLayer::Cycling {
+            // connect to the base layer
+            let from_base_cell = H3Cell {
+                cell: from,
+                layer: -1,
+            };
+            let to_base_cell = H3Cell {
+                cell: to,
+                layer: -1,
+            };
+            graph.build_and_add_egde(from_cell, from_base_cell, Some(1.0), None)?;
+            graph.build_and_add_egde(to_cell, to_base_cell, Some(1.0), None)?;
+            graph.build_and_add_egde(from_base_cell, from_cell, Some(1.0), None)?;
+            graph.build_and_add_egde(to_base_cell, to_cell, Some(1.0), None)?;
+        }
     }
     Ok(graph)
 }
@@ -155,5 +174,111 @@ impl Graph<H3Cell> {
             })
             .collect::<Vec<_>>();
         Ok(plot_data)
+    }
+}
+
+#[pyclass]
+pub struct PyH3Graph {
+    graph: Graph<H3Cell>,
+}
+
+#[allow(unused_variables)]
+#[pymethods]
+impl PyH3Graph {
+    #[new]
+    pub fn new() -> Self {
+        Self {
+            graph: Graph::<H3Cell>::new(),
+        }
+    }
+
+    pub fn create(&mut self, osm_path: &str, gtfs_path: &str) -> PyResult<()> {
+        let start = Instant::now();
+        let mut osm_graph =
+            h3_network_from_osm(osm_path, OSMLayer::Walking).unwrap();
+        println!(
+            "osm graph created with {} nodes in {} s",
+            osm_graph.nr_nodes(),
+            start.elapsed().as_secs()
+        );
+
+        let start = Instant::now();
+        let mut gtfs_graph = h3_network_from_gtfs(gtfs_path).unwrap();
+        println!(
+            "gtfs graph created with {} nodes in {} s",
+            gtfs_graph.nr_nodes(),
+            start.elapsed().as_secs()
+        );
+
+        let start = Instant::now();
+        if osm_graph.merge(&mut gtfs_graph).is_ok() {
+            self.graph = osm_graph;
+            println!(
+                "merged graph created with {} nodes in {} s",
+                self.graph.nr_nodes(),
+                start.elapsed().as_secs()
+            );
+        } else {
+            println!("failed to merge graphs");
+        }
+
+        Ok(())
+    }
+
+    pub fn matrix_bfs(&self, origins: Vec<u64>, destinations: Vec<u64>) -> PyResult<Vec<Vec<f64>>> {
+        // map each origin and destination to an H3 cell that is present in the graph
+        let node_map_access = self.graph.node_map.as_ref().read().unwrap();
+
+        let origins = u64list_to_cells(&node_map_access, origins);
+        let destinations = u64list_to_cells(&node_map_access, destinations);
+
+        let distances = self
+            .graph
+            .matrix_bfs_distance(origins, Some(destinations), false);
+
+        Ok(distances
+            .into_iter()
+            .map(|row| {
+                row.into_iter()
+                    .map(|x| if let Some(x) = x { x } else { f64::MAX })
+                    .collect()
+            })
+            .collect())
+    }
+}
+
+fn u64list_to_cells(
+    node_access: &RwLockReadGuard<BiHashMap<H3Cell, usize>>,
+    list: Vec<u64>,
+) -> Vec<H3Cell> {
+    list.into_iter()
+        .filter_map(|origin| {
+            let cell_index: h3o::CellIndex = origin.try_into().ok()?;
+            let cell = H3Cell {
+                cell: cell_index,
+                layer: -1,
+            };
+            if node_access.contains_left(&cell) {
+                Some(cell)
+            } else {
+                let neighbors = cell_index.grid_ring_fast(1);
+                for neighbor in neighbors.flatten() {
+                    let neighbor_cell = H3Cell {
+                        cell: neighbor,
+                        layer: -1,
+                    };
+                    if node_access.contains_left(&neighbor_cell) {
+                        return Some(neighbor_cell)
+                    }
+                }
+                None
+            }
+        })
+        .collect::<Vec<_>>()
+}
+
+impl Default for PyH3Graph {
+    fn default() -> Self {
+        Self::new()
     }
 }

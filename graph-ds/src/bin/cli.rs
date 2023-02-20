@@ -73,13 +73,14 @@ fn main() -> anyhow::Result<()> {
     // Ok(())
 }
 
+#[allow(clippy::type_complexity)]
 fn plot_png(
     plot_data: Vec<((f32, f32, f32), (f32, f32, f32))>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     println!(
         "plotting {} edges, e.g. {:?}",
         plot_data.len(),
-        plot_data.get(0)
+        plot_data.first()
     );
 
     let (x_min, x_max, y_min, y_max, z_min, z_max) = plot_data.iter().fold(

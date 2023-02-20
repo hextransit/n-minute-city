@@ -15,7 +15,7 @@ pub fn process_gtfs(
 
     let feed = gtfs_structures::GtfsReader::default()
         .trim_fields(false)
-        .read(&url)?;
+        .read(url)?;
 
     // let trips = feed.trips;
     let route_data: HashMap<String, usize> = feed
