@@ -11,7 +11,7 @@ use std::{
 };
 
 use bimap::{BiHashMap, BiMap};
-use hexagon_graph::PyH3Graph;
+use hexagon_graph::{PyH3Graph, PyCellGraph};
 use pyo3::prelude::*;
 use rayon::prelude::*;
 
@@ -450,6 +450,7 @@ impl<T: Eq + Hash + Copy + Send + Sync + std::fmt::Debug> Default for Graph<T> {
 #[pymodule]
 fn graph_ds(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PyH3Graph>()?;
+    m.add_class::<PyCellGraph>()?;
 
     Ok(())
 }
