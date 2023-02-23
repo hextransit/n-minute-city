@@ -8,7 +8,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
-  
+
 jobs:
   graph-ds:
     name: Build graph-ds Wheels
@@ -41,12 +41,12 @@ jobs:
         run: pip install maturin
       - name: Build wheels
         run: |
-          maturin build --manifest-path graph-ds/Cargo.toml --target ${{ matrix.target }} --release --strip --out dist
+          maturin build --manifest-path graph-ds/Cargo.toml --target ${{ matrix.target }} --release --strip --out wheels
       - name: Upload wheels
         uses: actions/upload-artifact@v3
         with:
           name: wheels
-          path: dist/*.whl
+          path: wheels/*.whl
 
   pull-request:
     name: Make pull request to graph-ds
@@ -62,10 +62,9 @@ jobs:
       - uses: actions/download-artifact@v3
         with:
           name: wheels
-          path: dist
+          path: wheels
       - name: make changes
         run: |
-          cp dist/*.whl wheels/
           git add wheels/*.whl
       - name: commit changes
         uses: peter-evans/create-pull-request@v3
