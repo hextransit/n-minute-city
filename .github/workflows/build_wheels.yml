@@ -4,6 +4,11 @@ on:
     tags:
       - 'graph-ds-v*'
   workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  
 jobs:
   graph-ds:
     name: Build graph-ds Wheels
@@ -46,10 +51,6 @@ jobs:
   pull-request:
     name: Make pull request to graph-ds
     runs-on: ubuntu-latest
-
-    permissions:
-      contents: write
-      pull-requests: write
 
     needs: graph-ds
     steps:
