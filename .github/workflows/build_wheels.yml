@@ -1,5 +1,6 @@
 name: Build graph-ds Wheels
 on:
+  push:
     tags:
       - 'graph-ds-v*'
   workflow_dispatch:
