@@ -1,0 +1,83 @@
+name: Build graph-ds Wheels
+on:
+    tags:
+      - 'graph-ds-v*'
+  workflow_dispatch:
+jobs:
+  graph-ds:
+    name: Build graph-ds Wheels
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        python-version: ["3.10"]
+        os: [ubuntu-latest, macos-latest]
+        include:
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            packages: lld pkg-config libarchive-dev sqlite ffmpeg libavdevice-dev libavfilter-dev libavformat-dev libavutil-dev libpq-dev libpcap0.8-dev libasound2-dev libudev-dev
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+      - uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends ${{ matrix.packages }}
+      - name: Install maturin
+        run: pip install maturin
+      - name: Build wheels
+        run: |
+          maturin build --manifest-path graph-ds/Cargo.toml --target ${{ matrix.target }} --release --strip --out dist
+      - name: Upload wheels
+        uses: actions/upload-artifact@v3
+        with:
+          name: wheels
+          path: dist/*.whl
+
+  pull-request:
+    name: Make pull request to graph-ds
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      pull-requests: write
+
+    needs: graph-ds
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          repository: potatoTVnet/n-minute-city
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@v3
+        with:
+          name: wheels
+          path: dist
+      - name: make changes
+        run: |
+          cp dist/*.whl wheels/
+          git add wheels/*.whl
+      - name: commit changes
+        uses: peter-evans/create-pull-request@v3
+        id: cpr
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: Update wheels
+          committer: GitHub <noreply@github.com>
+          author: ${{ github.actor }} <${{ github.actor }}@users.noreply.github.com>
+          title: automated wheel update
+          body: |
+            Update wheels
+          branch: update-wheels
+          delete-branch: true
+          labels: |
+            update wheels
+          draft: false
+          branch-suffix: random
