@@ -3,11 +3,12 @@ pub mod gtfs;
 pub mod h3cell;
 pub mod osm;
 
-use std::{collections::HashSet, sync::RwLockReadGuard, time::Instant};
+use std::{sync::RwLockReadGuard, time::Instant};
 
 use crate::{Edge, Graph};
 use bimap::BiHashMap;
 use cell::Cell;
+use rayon::prelude::*;
 
 use self::{
     cell::Direction,
@@ -38,13 +39,15 @@ impl Graph<Cell> {
     }
 }
 
-pub fn hexagon_graph_from_file(path: &str) -> anyhow::Result<Graph<Cell>> {
+pub fn cell_graph_from_mpk(path: &str) -> anyhow::Result<Graph<Cell>> {
     //reader
     let file = std::fs::File::open(path)?;
     let mut graph = Graph::<Cell>::new();
-    let edges: HashSet<(Cell, Cell)> = rmp_serde::from_read(file)?;
-    edges.iter().for_each(|(from, to)| {
-        let res = graph.build_and_add_egde(*from, *to, Some(1.0), None);
+    // let edges: HashSet<(Cell, Cell)> = rmp_serde::from_read(file)?;
+    let edges: Vec<(Cell, Cell, f32)> = rmp_serde::from_read(file)?;
+
+    edges.iter().for_each(|(from, to, weight)| {
+        let res = graph.build_and_add_egde(*from, *to, Some(*weight as f64), None);
         if res.is_err() {
             println!("error: {res:?}");
         }
@@ -229,15 +232,15 @@ impl PyH3Graph {
         // map each origin and destination to an H3 cell that is present in the graph
         let node_map_access = self.graph.node_map.as_ref().read().unwrap();
 
-        let origins = u64list_to_cells(&node_map_access, origins);
-        let destinations = u64list_to_cells(&node_map_access, destinations);
+        let origins = u64list_to_h3cells(&node_map_access, origins);
+        let destinations = u64list_to_h3cells(&node_map_access, destinations);
 
         let distances = self
             .graph
             .matrix_bfs_distance(origins, Some(destinations), false);
 
         Ok(distances
-            .into_iter()
+            .into_par_iter()
             .map(|row| {
                 row.into_iter()
                     .map(|x| if let Some(x) = x { x } else { f64::MAX })
@@ -247,7 +250,7 @@ impl PyH3Graph {
     }
 }
 
-fn u64list_to_cells(
+fn u64list_to_h3cells(
     node_access: &RwLockReadGuard<BiHashMap<H3Cell, usize>>,
     list: Vec<u64>,
 ) -> Vec<H3Cell> {
@@ -278,6 +281,57 @@ fn u64list_to_cells(
 }
 
 impl Default for PyH3Graph {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[pyclass]
+pub struct PyCellGraph {
+    graph: Graph<Cell>,
+}
+
+#[pymethods]
+impl PyCellGraph {
+    #[new]
+    pub fn new () -> Self {
+        Self {
+            graph: Graph::<Cell>::new(),
+        }
+    }
+
+    pub fn create_from_mpk(&mut self, mpk_path: &str) -> PyResult<()> {
+        let start = Instant::now();
+        let mpk_graph = cell_graph_from_mpk(mpk_path).unwrap();
+        println!(
+            "mpk graph created with {} nodes in {} s",
+            mpk_graph.nr_nodes(),
+            start.elapsed().as_secs()
+        );
+        self.graph = mpk_graph;
+        Ok(())
+    }
+
+    pub fn matrix_bfs(&self, origins: Vec<u64>, destinations: Vec<u64>) -> PyResult<Vec<Vec<f64>>> {
+
+        let origins = origins.iter().map(|o| {Cell::from_id(*o)}).collect::<Vec<_>>();
+        let destinations = destinations.iter().map(|d| {Cell::from_id(*d)}).collect::<Vec<_>>();
+        let distances = self
+            .graph
+            .matrix_bfs_distance(origins, Some(destinations), false);
+
+        Ok(distances
+            .into_par_iter()
+            .map(|row| {
+                row.into_iter()
+                    .map(|x| if let Some(x) = x { x } else { f64::MAX })
+                    .collect()
+            })
+            .collect())
+    }
+}
+
+impl Default for PyCellGraph {
     fn default() -> Self {
         Self::new()
     }
