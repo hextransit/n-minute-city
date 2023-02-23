@@ -25,3 +25,4 @@ dependencies:
         - pyarrow
         - seaborn
         - lets_plot
+        - ../wheels/graph_ds-0.1.0-cp310-cp310-manylinux_2_34_x86_64.whl
