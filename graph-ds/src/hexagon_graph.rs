@@ -228,6 +228,39 @@ impl PyH3Graph {
         Ok(())
     }
 
+    pub fn astar_path(&self, origin: u64, destination: u64) -> PyResult<(Vec<u64>, f64)> {
+        fn h(start_cell: &H3Cell, end_cell: &H3Cell) -> f64 {
+            start_cell.cell.grid_distance(end_cell.cell).unwrap_or(i32::MAX) as f64
+        }
+
+        let node_map_access = self.graph.node_map.as_ref().read().unwrap();
+        let cells = u64list_to_h3cells(&node_map_access, vec![origin, destination]);
+
+        if cells.len() != 2 {
+            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                "origin or destination not found",
+            ));
+        }
+
+        let (origin, destination) = (cells[0], cells[1]);
+
+        let path = self.graph.astar(origin, destination, h);
+
+        if let Ok(path) = path {
+            let u64_path = path.0
+                .into_iter()
+                .flat_map(|cell| {
+                    cell.cell.try_into()
+                }).collect::<Vec<u64>>();
+
+            Ok((u64_path, path.1))
+        } else {
+            Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                "no path found",
+            ))
+        }
+    }
+
     pub fn matrix_bfs(&self, origins: Vec<u64>, destinations: Vec<u64>) -> PyResult<Vec<Vec<f64>>> {
         // map each origin and destination to an H3 cell that is present in the graph
         let node_map_access = self.graph.node_map.as_ref().read().unwrap();
