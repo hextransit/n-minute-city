@@ -28,6 +28,7 @@ gtfs-structures = "0.33.0"
 osmpbf = "0.3.0"
 
 plotters = "0.3.3"
+rand = "0.8.5"
 
 pyo3 = { version = "0.17.2", optional = true, features = ["extension-module"] }
 

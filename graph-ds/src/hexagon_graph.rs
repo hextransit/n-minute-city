@@ -3,7 +3,7 @@ pub mod gtfs;
 pub mod h3cell;
 pub mod osm;
 
-use std::{sync::RwLockReadGuard, time::Instant};
+use std::{collections::HashMap, sync::RwLockReadGuard, time::Instant};
 
 use crate::{Edge, Graph};
 use bimap::BiHashMap;
@@ -16,6 +16,7 @@ use self::{
     osm::{process_osm_pbf, OSMLayer},
 };
 
+#[cfg(feature = "pyo3")]
 use pyo3::prelude::*;
 
 /// each node is a hexagon cell
@@ -180,11 +181,13 @@ impl Graph<H3Cell> {
     }
 }
 
+#[cfg(feature = "pyo3")]
 #[pyclass]
 pub struct PyH3Graph {
     graph: Graph<H3Cell>,
 }
 
+#[cfg(feature = "pyo3")]
 #[allow(unused_variables)]
 #[pymethods]
 impl PyH3Graph {
@@ -197,8 +200,7 @@ impl PyH3Graph {
 
     pub fn create(&mut self, osm_path: &str, gtfs_path: &str) -> PyResult<()> {
         let start = Instant::now();
-        let mut osm_graph =
-            h3_network_from_osm(osm_path, OSMLayer::Walking).unwrap();
+        let mut osm_graph = h3_network_from_osm(osm_path, OSMLayer::Walking).unwrap();
         println!(
             "osm graph created with {} nodes in {} s",
             osm_graph.nr_nodes(),
@@ -225,33 +227,47 @@ impl PyH3Graph {
             println!("failed to merge graphs");
         }
 
+        println!("hash: {}", self.graph.node_hash());
+
         Ok(())
     }
 
     pub fn astar_path(&self, origin: u64, destination: u64) -> PyResult<(Vec<u64>, f64)> {
         fn h(start_cell: &H3Cell, end_cell: &H3Cell) -> f64 {
-            start_cell.cell.grid_distance(end_cell.cell).unwrap_or(i32::MAX) as f64
+            start_cell
+                .cell
+                .grid_distance(end_cell.cell)
+                .unwrap_or(i32::MAX) as f64
         }
 
         let node_map_access = self.graph.node_map.as_ref().read().unwrap();
-        let cells = u64list_to_h3cells(&node_map_access, vec![origin, destination]);
+        let node_mapping = u64list_to_h3cells(&node_map_access, vec![origin, destination]);
 
-        if cells.len() != 2 {
+        node_mapping.iter().for_each(|(original, mapped)| {
+            if let Some(mapped) = mapped {
+                let mapped_u64 = u64::from(mapped.cell);
+                if original != &mapped_u64 {
+                    println!("nodes have been adjusted: {} -> {}", original, mapped_u64);
+                }
+            }
+        });
+
+        let (Some(Some(origin)), Some(Some(destination))) = (node_mapping.get_by_left(&origin), node_mapping.get_by_left(&destination)) else {
             return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
                 "origin or destination not found",
             ));
-        }
+        };
 
-        let (origin, destination) = (cells[0], cells[1]);
+        println!("astar from {} to {}", u64::from(origin.cell), u64::from(destination.cell));
 
-        let path = self.graph.astar(origin, destination, h);
+        let path = self.graph.astar(*origin, *destination, h);
 
         if let Ok(path) = path {
-            let u64_path = path.0
+            let u64_path = path
+                .0
                 .into_iter()
-                .flat_map(|cell| {
-                    cell.cell.try_into()
-                }).collect::<Vec<u64>>();
+                .flat_map(|cell| cell.cell.try_into())
+                .collect::<Vec<u64>>();
 
             Ok((u64_path, path.1))
         } else {
@@ -261,32 +277,55 @@ impl PyH3Graph {
         }
     }
 
-    pub fn matrix_bfs(&self, origins: Vec<u64>, destinations: Vec<u64>) -> PyResult<Vec<Vec<f64>>> {
+    pub fn matrix_bfs(
+        &self,
+        origins: Vec<u64>,
+        destinations: Vec<u64>,
+    ) -> PyResult<HashMap<u64, Vec<f64>>> {
         // map each origin and destination to an H3 cell that is present in the graph
         let node_map_access = self.graph.node_map.as_ref().read().unwrap();
 
         let origins = u64list_to_h3cells(&node_map_access, origins);
         let destinations = u64list_to_h3cells(&node_map_access, destinations);
 
-        let distances = self
-            .graph
-            .matrix_bfs_distance(origins, Some(destinations), false);
+        let distances = self.graph.matrix_bfs_distance(
+            origins.iter().filter_map(|(_, c)| *c).collect::<Vec<_>>(),
+            Some(
+                destinations
+                    .iter()
+                    .filter_map(|(_, c)| *c)
+                    .collect::<Vec<_>>(),
+            ),
+            false,
+        );
 
         Ok(distances
             .into_par_iter()
-            .map(|row| {
-                row.into_iter()
-                    .map(|x| if let Some(x) = x { x } else { f64::MAX })
-                    .collect()
+            .map(|(graph_origin, distances)| {
+                let original_origin: u64 = *origins.get_by_right(&Some(graph_origin)).unwrap();
+                if let Ok(row) = distances {
+                    (
+                        original_origin,
+                        row.into_iter()
+                            .map(|x| if let Some(x) = x { x } else { f64::MAX })
+                            .collect(),
+                    )
+                } else {
+                    (original_origin, vec![])
+                }
             })
             .collect())
     }
 }
 
+/// returns processed H3 cells in a list of tuples (original H3 input, mapped H3 cell)
+///
+/// H3 cells that are not present in the graph are mapped to their first neighbor that is present in the graph
+/// or none if no cells can be found within a k-ring of size 2
 fn u64list_to_h3cells(
     node_access: &RwLockReadGuard<BiHashMap<H3Cell, usize>>,
     list: Vec<u64>,
-) -> Vec<H3Cell> {
+) -> BiHashMap<u64, Option<H3Cell>> {
     list.into_iter()
         .filter_map(|origin| {
             let cell_index: h3o::CellIndex = origin.try_into().ok()?;
@@ -295,39 +334,42 @@ fn u64list_to_h3cells(
                 layer: -1,
             };
             if node_access.contains_left(&cell) {
-                Some(cell)
+                Some((origin, Some(cell)))
             } else {
-                let neighbors = cell_index.grid_ring_fast(1);
+                let neighbors = cell_index.grid_ring_fast(2);
                 for neighbor in neighbors.flatten() {
                     let neighbor_cell = H3Cell {
                         cell: neighbor,
                         layer: -1,
                     };
                     if node_access.contains_left(&neighbor_cell) {
-                        return Some(neighbor_cell)
+                        return Some((origin, Some(neighbor_cell)));
                     }
                 }
-                None
+                Some((origin, None))
             }
         })
-        .collect::<Vec<_>>()
+        .collect::<BiHashMap<_, _>>()
 }
 
+#[cfg(feature = "pyo3")]
 impl Default for PyH3Graph {
     fn default() -> Self {
         Self::new()
     }
 }
 
+#[cfg(feature = "pyo3")]
 #[pyclass]
 pub struct PyCellGraph {
     graph: Graph<Cell>,
 }
 
+#[cfg(feature = "pyo3")]
 #[pymethods]
 impl PyCellGraph {
     #[new]
-    pub fn new () -> Self {
+    pub fn new() -> Self {
         Self {
             graph: Graph::<Cell>::new(),
         }
@@ -345,25 +387,42 @@ impl PyCellGraph {
         Ok(())
     }
 
-    pub fn matrix_bfs(&self, origins: Vec<u64>, destinations: Vec<u64>) -> PyResult<Vec<Vec<f64>>> {
-
-        let origins = origins.iter().map(|o| {Cell::from_id(*o)}).collect::<Vec<_>>();
-        let destinations = destinations.iter().map(|d| {Cell::from_id(*d)}).collect::<Vec<_>>();
+    pub fn matrix_bfs(
+        &self,
+        origins: Vec<u64>,
+        destinations: Vec<u64>,
+    ) -> PyResult<HashMap<u64, Vec<f64>>> {
+        let origins = origins
+            .iter()
+            .map(|o| Cell::from_id(*o))
+            .collect::<Vec<_>>();
+        let destinations = destinations
+            .iter()
+            .map(|d| Cell::from_id(*d))
+            .collect::<Vec<_>>();
         let distances = self
             .graph
             .matrix_bfs_distance(origins, Some(destinations), false);
 
         Ok(distances
             .into_par_iter()
-            .map(|row| {
-                row.into_iter()
-                    .map(|x| if let Some(x) = x { x } else { f64::MAX })
-                    .collect()
+            .map(|(start, row)| {
+                if let Ok(row) = row {
+                    (
+                        start.id(),
+                        row.into_iter()
+                            .map(|x| if let Some(x) = x { x } else { f64::MAX })
+                            .collect(),
+                    )
+                } else {
+                    (start.id(), vec![])
+                }
             })
             .collect())
     }
 }
 
+#[cfg(feature = "pyo3")]
 impl Default for PyCellGraph {
     fn default() -> Self {
         Self::new()

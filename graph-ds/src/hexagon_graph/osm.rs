@@ -54,7 +54,6 @@ pub fn process_osm_pbf(
                                     }
                                 })
                                 .collect::<Vec<CellIndex>>();
-                            //TODO: maybe connect all edges, not just one?
                             let edges = path_points
                                 .windows(2)
                                 .flat_map(|cells| {
