@@ -22,12 +22,18 @@ pub enum Direction {
 ///  * radius: the size of each hexagon
 ///  * layer: for multi-layer grids, think of it as levels on buildings (implementation is not yet complete)
 ///
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Ord, Serialize, Deserialize)]
 pub struct Cell {
     pub a: i16,
     pub b: i16,
     pub radius: i16,
     pub layer: i16,
+}
+
+impl PartialOrd for Cell {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.id().cmp(&other.id()))
+    }
 }
 
 impl Cell {
