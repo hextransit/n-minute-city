@@ -258,18 +258,27 @@ impl PyH3Graph {
             ));
         };
 
-        println!("astar from {} to {}", u64::from(origin.cell), u64::from(destination.cell));
+        println!(
+            "astar from {} to {}",
+            u64::from(origin.cell),
+            u64::from(destination.cell)
+        );
 
-        let path = self.graph.astar(*origin, *destination, h);
+        let astar_res = self.graph.astar(*origin, Some(*destination), &None, h);
 
-        if let Ok(path) = path {
-            let u64_path = path
-                .0
-                .into_iter()
-                .flat_map(|cell| cell.cell.try_into())
-                .collect::<Vec<u64>>();
+        if let Ok(astar_res) = astar_res {
+            if let (Some(path), Some(distance)) = (astar_res.path, astar_res.distances.first()) {
+                let u64_path = path
+                    .into_iter()
+                    .flat_map(|cell| cell.cell.try_into())
+                    .collect::<Vec<u64>>();
 
-            Ok((u64_path, path.1))
+                Ok((u64_path, *distance))
+            } else {
+                Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                    "no path found",
+                ))
+            }
         } else {
             Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
                 "no path found",
@@ -277,18 +286,25 @@ impl PyH3Graph {
         }
     }
 
-    pub fn matrix_bfs(
+    pub fn matrix_distance(
         &self,
         origins: Vec<u64>,
         destinations: Vec<u64>,
     ) -> PyResult<HashMap<u64, Vec<f64>>> {
+        fn h(start_cell: &H3Cell, end_cell: &H3Cell) -> f64 {
+            start_cell
+                .cell
+                .grid_distance(end_cell.cell)
+                .unwrap_or(i32::MAX) as f64
+        }
+
         // map each origin and destination to an H3 cell that is present in the graph
         let node_map_access = self.graph.node_map.as_ref().read().unwrap();
 
         let origins = u64list_to_h3cells(&node_map_access, origins);
         let destinations = u64list_to_h3cells(&node_map_access, destinations);
 
-        let distances = self.graph.matrix_bfs_distance(
+        let distances = self.graph.matrix_astar_distance(
             origins.iter().filter_map(|(_, c)| *c).collect::<Vec<_>>(),
             Some(
                 destinations
@@ -297,6 +313,7 @@ impl PyH3Graph {
                     .collect::<Vec<_>>(),
             ),
             false,
+            h,
         );
 
         Ok(distances
@@ -304,12 +321,7 @@ impl PyH3Graph {
             .map(|(graph_origin, distances)| {
                 let original_origin: u64 = *origins.get_by_right(&Some(graph_origin)).unwrap();
                 if let Ok(row) = distances {
-                    (
-                        original_origin,
-                        row.into_iter()
-                            .map(|x| if let Some(x) = x { x } else { f64::MAX })
-                            .collect(),
-                    )
+                    (original_origin, row)
                 } else {
                     (original_origin, vec![])
                 }

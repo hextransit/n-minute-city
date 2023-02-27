@@ -3,7 +3,7 @@ pub mod u64_graph;
 
 use std::cmp::{Ordering, Reverse};
 use std::collections::hash_map::DefaultHasher;
-use std::collections::{BinaryHeap, HashSet, VecDeque};
+use std::collections::{BinaryHeap, HashSet, VecDeque, BTreeSet};
 use std::hash::{Hash, Hasher};
 use std::sync::RwLockWriteGuard;
 use std::{
@@ -56,7 +56,7 @@ impl Hash for Edge {
     }
 }
 
-impl<T: Eq + Hash + Copy + Send + Sync + std::fmt::Debug> Graph<T> {
+impl<T: Eq + Hash + Copy + Send + Sync + Ord + std::fmt::Debug> Graph<T> {
     pub fn new() -> Self {
         Self {
             nodes: Arc::new(RwLock::new(Vec::new())),
@@ -71,12 +71,8 @@ impl<T: Eq + Hash + Copy + Send + Sync + std::fmt::Debug> Graph<T> {
 
     pub fn node_hash(&self) -> u64 {
         let mut hasher = DefaultHasher::new();
-        self.nodes.as_ref().read().unwrap().iter().for_each(|node| {
-            if let Some(node) = node {
-                node.id.hash(&mut hasher);
-            }
-        });
-
+        let btree = BTreeSet::from_iter(self.nodes.as_ref().read().unwrap().iter().flatten().map(|node| node.id));
+        btree.hash(&mut hasher);
         hasher.finish()
     }
 
@@ -356,13 +352,49 @@ impl<T: Eq + Hash + Copy + Send + Sync + std::fmt::Debug> Graph<T> {
         Ok((None, distances))
     }
 
+    pub fn matrix_astar_distance(
+        &self,
+        origins: Vec<T>,
+        destinations: Option<Vec<T>>,
+        force: bool,
+        heuristic: impl Fn(&T, &T) -> f64 + Send + Sync + Copy,
+    ) -> HashMap<T, anyhow::Result<Vec<f64>>> {
+        if force {
+            origins
+                .into_par_iter()
+                .map(|s| {
+                    (
+                        s,
+                        self.astar(s, None, &destinations, heuristic)
+                            .map(|res| res.distances),
+                    )
+                })
+                .collect()
+        } else {
+            // removes duplicates before iteration
+            origins
+                .into_iter()
+                .collect::<HashSet<T>>()
+                .into_par_iter()
+                .map(|s| {
+                    (
+                        s,
+                        self.astar(s, None, &destinations, heuristic)
+                            .map(|res| res.distances),
+                    )
+                })
+                .collect()
+        }
+    }
+
     /// calculates the shortest path between two nodes using the A* algorithm, returns the path and the distance
     pub fn astar(
         &self,
         start: T,
-        end: T,
+        end: Option<T>,
+        end_list: &Option<Vec<T>>,
         heuristic: impl Fn(&T, &T) -> f64,
-    ) -> anyhow::Result<(Vec<T>, f64)> {
+    ) -> anyhow::Result<AStarResult<T>> {
         #[derive(Debug, Clone, PartialEq)]
         struct AStarNode {
             id: usize,
@@ -395,27 +427,56 @@ impl<T: Eq + Hash + Copy + Send + Sync + std::fmt::Debug> Graph<T> {
         let Some(start_idx) = node_map_access.get_by_left(&start) else {
             return Err(anyhow::anyhow!("start node not found in node map"));
         };
-        let Some(end_idx) = node_map_access.get_by_left(&end) else {
-            return Err(anyhow::anyhow!("end node not found in node map"));
+
+        let target_list = if let Some(end_list) = end_list {
+            end_list.clone()
+        } else if let Some(end) = end {
+            vec![end]
+        } else {
+            return Err(anyhow::anyhow!("no end node provided"));
         };
+
+        let target_idx_list = target_list
+            .iter()
+            .filter_map(|end| node_map_access.get_by_left(end))
+            .collect::<Vec<_>>();
+
+        let mut target_idx_set = target_idx_list.iter().cloned().collect::<HashSet<_>>();
+
+        let is_single_target = target_idx_list.len() == 1;
 
         g_score[*start_idx] = Some(0.0);
         q.push(Reverse(AStarNode {
             id: *start_idx,
-            f_score: heuristic(&start, &end),
+            f_score: heuristic(&start, &target_list[0]),
         }));
 
         while !q.is_empty() {
             let current = q.pop().ok_or(anyhow::anyhow!("queue was empty"))?.0;
             let current_idx = current.id;
 
-            if current_idx == *end_idx {
+            if target_idx_set.contains(&current_idx) {
                 // found the target, backtrace the path
-                let path = self.backtrace(&parents, *end_idx, *start_idx);
-                return Ok((
-                    path?,
-                    g_score[*end_idx].ok_or(anyhow::anyhow!("target g score was not recorded"))?,
-                ));
+
+                target_idx_set.remove(&current_idx);
+                if is_single_target {
+                    let path = self.backtrace(&parents, current_idx, *start_idx)?;
+                    return Ok(AStarResult {
+                        path: Some(path),
+                        single_target: is_single_target,
+                        distances: vec![g_score[current_idx]
+                            .ok_or(anyhow::anyhow!("target g score was not recorded"))?],
+                    });
+                } else if target_idx_set.is_empty() {
+                    return Ok(AStarResult {
+                        path: None,
+                        single_target: is_single_target,
+                        distances: target_idx_list
+                            .into_iter()
+                            .filter_map(|idx| g_score[*idx])
+                            .collect::<Vec<_>>(),
+                    });
+                }
             }
 
             if let Some(next_edges) = edges_access.get(&current_idx) {
@@ -473,13 +534,19 @@ impl<T: Eq + Hash + Copy + Send + Sync + std::fmt::Debug> Graph<T> {
                 break;
             }
         }
-        
+
         path.reverse();
         Ok(path)
     }
 }
 
-impl<T: Eq + Hash + Copy + Send + Sync + std::fmt::Debug> Default for Graph<T> {
+pub struct AStarResult<T> {
+    pub path: Option<Vec<T>>,
+    pub single_target: bool,
+    pub distances: Vec<f64>,
+}
+
+impl<T: Eq + Hash + Copy + Send + Ord + Sync + std::fmt::Debug> Default for Graph<T> {
     fn default() -> Self {
         Self::new()
     }

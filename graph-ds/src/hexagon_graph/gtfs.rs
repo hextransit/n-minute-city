@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, BTreeMap};
 
 use h3o::CellIndex;
 use rayon::prelude::*;
@@ -19,7 +19,7 @@ pub fn process_gtfs(
 
     // let trips = feed.trips;
     let route_data: HashMap<String, usize> = feed
-        .routes
+        .routes.into_iter().collect::<BTreeMap<_, _>>()
         .keys()
         .enumerate()
         .par_bridge()

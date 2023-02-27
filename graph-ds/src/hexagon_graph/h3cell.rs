@@ -1,12 +1,20 @@
+use std::{collections::hash_map::DefaultHasher, hash::{Hasher, Hash}};
+
 use h3o::{CellIndex, LatLng, Resolution};
 
 use super::cell::Cell;
 
 /// A H3 cell
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Ord, Hash)]
 pub struct H3Cell {
     pub cell: CellIndex,
     pub layer: i16,
+}
+
+impl PartialOrd for H3Cell {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cell_hash().cmp(&other.cell_hash()))
+    }
 }
 
 impl H3Cell {
@@ -20,6 +28,14 @@ impl H3Cell {
             cell: LatLng::new(lat, lng)?.to_cell(resolution),
             layer,
         })
+    }
+
+    pub fn cell_hash(&self) -> u64 {
+        let mut h = DefaultHasher::new();
+        self.cell.hash(&mut h);
+        0x0.hash(&mut h);
+        self.layer.hash(&mut h);
+        h.finish()
     }
 
     /// converts the H3 cell to a normal hexagon cell. The default origin is (0, 0)
