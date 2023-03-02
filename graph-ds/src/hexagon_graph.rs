@@ -33,7 +33,7 @@ impl Graph<Cell> {
             .iter()
             .map(|direction| cell.get_neighbor(*direction))
         {
-            self.build_and_add_egde(cell, neighbor, weight, None)?
+            self.build_and_add_egde(cell, neighbor, weight, None, None)?
         }
 
         Ok(())
@@ -48,7 +48,7 @@ pub fn cell_graph_from_mpk(path: &str) -> anyhow::Result<Graph<Cell>> {
     let edges: Vec<(Cell, Cell, f32)> = rmp_serde::from_read(file)?;
 
     edges.iter().for_each(|(from, to, weight)| {
-        let res = graph.build_and_add_egde(*from, *to, Some(*weight as f64), None);
+        let res = graph.build_and_add_egde(*from, *to, Some(*weight as f64), None, None);
         if res.is_err() {
             println!("error: {res:?}");
         }
@@ -76,8 +76,8 @@ pub fn h3_network_from_osm(osm_url: &str, layer: OSMLayer) -> anyhow::Result<Gra
             layer: layer_id,
         };
         // connect the two cells in both directions
-        graph.build_and_add_egde(from_cell, to_cell, Some(weight), None)?;
-        graph.build_and_add_egde(to_cell, from_cell, Some(weight), None)?;
+        graph.build_and_add_egde(from_cell, to_cell, Some(weight), None, None)?;
+        graph.build_and_add_egde(to_cell, from_cell, Some(weight), None, None)?;
 
         if layer == OSMLayer::Cycling {
             // connect to the base layer
@@ -89,20 +89,20 @@ pub fn h3_network_from_osm(osm_url: &str, layer: OSMLayer) -> anyhow::Result<Gra
                 cell: to,
                 layer: -1,
             };
-            graph.build_and_add_egde(from_cell, from_base_cell, Some(1.0), None)?;
-            graph.build_and_add_egde(to_cell, to_base_cell, Some(1.0), None)?;
-            graph.build_and_add_egde(from_base_cell, from_cell, Some(1.0), None)?;
-            graph.build_and_add_egde(to_base_cell, to_cell, Some(1.0), None)?;
+            graph.build_and_add_egde(from_cell, from_base_cell, Some(1.0), None, None)?;
+            graph.build_and_add_egde(to_cell, to_base_cell, Some(1.0), None, None)?;
+            graph.build_and_add_egde(from_base_cell, from_cell, Some(1.0), None, None)?;
+            graph.build_and_add_egde(to_base_cell, to_cell, Some(1.0), None, None)?;
         }
     }
     Ok(graph)
 }
 
 pub fn h3_network_from_gtfs(gtfs_url: &str) -> anyhow::Result<Graph<H3Cell>> {
-    let edge_data = gtfs::process_gtfs(gtfs_url, h3o::Resolution::Twelve)?;
-
+    let gtfs_res = gtfs::process_gtfs(gtfs_url, h3o::Resolution::Twelve)?;
+    let weight_lists = gtfs_res.stop_frequencies;
     let mut graph = Graph::<H3Cell>::new();
-    for ((layer, from, to), weight) in edge_data {
+    for ((layer, from, to), weight) in gtfs_res.edge_data {
         let from_cell = H3Cell {
             cell: from,
             layer: layer as i16,
@@ -115,14 +115,23 @@ pub fn h3_network_from_gtfs(gtfs_url: &str) -> anyhow::Result<Graph<H3Cell>> {
             cell: from,
             layer: -1,
         };
+        if let Some(weight_list) = weight_lists.get(&(from, layer)) {
+            // connect from base layer with weight list
+            if weight_list.len() != 24*7 {
+                graph.build_and_add_egde(base_cell, from_cell, Some(5.0), None, None)?;
+            } else {
+                let list_average = 60.0 / (weight_list.iter().sum::<f64>() / weight_list.len() as f64) / 2.0;
+                let weight_list = weight_list.iter().map(|x| 60.0 / x / 2.0 ).collect::<Vec<_>>();
+                graph.build_and_add_egde(base_cell, from_cell, Some(list_average), Some(weight_list), None)?;    
+            }
+        } else {
+            // connect from base layer with weight 5
+            graph.build_and_add_egde(base_cell, from_cell, Some(5.0), None, None)?;
+        }
         // the transit edge
-        graph.build_and_add_egde(from_cell, to_cell, Some(weight), None)?;
-        // connections from the base layer
-        graph.build_and_add_egde(base_cell, from_cell, Some(1.0), None)?;
-        graph.build_and_add_egde(base_cell, to_cell, Some(1.0), None)?;
-        // connections to the base layer
-        graph.build_and_add_egde(from_cell, base_cell, Some(1.0), None)?;
-        graph.build_and_add_egde(to_cell, base_cell, Some(1.0), None)?;
+        graph.build_and_add_egde(from_cell, to_cell, Some(weight), None, None)?;
+        // the connection from the transit edge to the base layer
+        graph.build_and_add_egde(from_cell, base_cell, Some(1.0), None, None)?;
     }
     Ok(graph)
 }
@@ -264,7 +273,7 @@ impl PyH3Graph {
             u64::from(destination.cell)
         );
 
-        let astar_res = self.graph.astar(*origin, Some(*destination), &None, h);
+        let astar_res = self.graph.astar(*origin, Some(*destination), &None, None, h);
 
         if let Ok(astar_res) = astar_res {
             if let (Some(path), Some(distance)) = (astar_res.path, astar_res.distances.first()) {
@@ -290,6 +299,7 @@ impl PyH3Graph {
         &self,
         origins: Vec<u64>,
         destinations: Vec<u64>,
+        hour_of_week: Option<usize>,
     ) -> PyResult<HashMap<u64, Vec<f64>>> {
         fn h(start_cell: &H3Cell, end_cell: &H3Cell) -> f64 {
             start_cell
@@ -313,6 +323,7 @@ impl PyH3Graph {
                     .collect::<Vec<_>>(),
             ),
             false,
+            hour_of_week,
             h,
         );
 
@@ -391,19 +402,28 @@ impl PyCellGraph {
         let start = Instant::now();
         let mpk_graph = cell_graph_from_mpk(mpk_path).unwrap();
         println!(
-            "mpk graph created with {} nodes in {} s",
+            "mpk graph created with {} nodes in {} ms, hash: {}",
             mpk_graph.nr_nodes(),
-            start.elapsed().as_secs()
+            start.elapsed().as_millis(),
+            mpk_graph.node_hash()
         );
         self.graph = mpk_graph;
         Ok(())
     }
 
-    pub fn matrix_bfs(
+    pub fn matrix_distance(
         &self,
         origins: Vec<u64>,
         destinations: Vec<u64>,
     ) -> PyResult<HashMap<u64, Vec<f64>>> {
+        fn heuristic(start_cell: &Cell, end_cell: &Cell) -> f64 {
+            let dx = (start_cell.a - end_cell.a).abs();
+            let dy = (start_cell.b - end_cell.b).abs();
+            let dz = (start_cell.a + start_cell.b - end_cell.a - end_cell.b).abs();
+            let dlayer = (start_cell.layer - end_cell.layer).abs();
+            ((dx + dy + dz) as f64 / 2.0 + dlayer as f64) * (start_cell.radius * 2) as f64
+        }
+
         let origins = origins
             .iter()
             .map(|o| Cell::from_id(*o))
@@ -412,20 +432,15 @@ impl PyCellGraph {
             .iter()
             .map(|d| Cell::from_id(*d))
             .collect::<Vec<_>>();
-        let distances = self
-            .graph
-            .matrix_bfs_distance(origins, Some(destinations), false);
+        let distances =
+            self.graph
+                .matrix_astar_distance(origins, Some(destinations), false, None, heuristic);
 
         Ok(distances
             .into_par_iter()
             .map(|(start, row)| {
                 if let Ok(row) = row {
-                    (
-                        start.id(),
-                        row.into_iter()
-                            .map(|x| if let Some(x) = x { x } else { f64::MAX })
-                            .collect(),
-                    )
+                    (start.id(), row)
                 } else {
                     (start.id(), vec![])
                 }

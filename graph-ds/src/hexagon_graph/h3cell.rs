@@ -1,11 +1,14 @@
-use std::{collections::hash_map::DefaultHasher, hash::{Hasher, Hash}};
+use std::{
+    collections::hash_map::DefaultHasher,
+    hash::{Hash, Hasher},
+};
 
 use h3o::{CellIndex, LatLng, Resolution};
 
 use super::cell::Cell;
 
 /// A H3 cell
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct H3Cell {
     pub cell: CellIndex,
     pub layer: i16,
@@ -14,6 +17,12 @@ pub struct H3Cell {
 impl PartialOrd for H3Cell {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cell_hash().cmp(&other.cell_hash()))
+    }
+}
+
+impl Ord for H3Cell {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.cell_hash().cmp(&other.cell_hash())
     }
 }
 
