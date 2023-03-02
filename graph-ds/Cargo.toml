@@ -16,6 +16,7 @@ anyhow = "1.0"
 bimap = "0.6.2"
 rayon = "1.6.1"
 time = "0.3.18"
+itertools = "0.10.5"
 
 serde = { version = "1.0.147", features = ["derive"] }
 rmp-serde = "1.1.1"

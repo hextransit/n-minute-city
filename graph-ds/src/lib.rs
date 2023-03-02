@@ -3,7 +3,7 @@ pub mod u64_graph;
 
 use std::cmp::{Ordering, Reverse};
 use std::collections::hash_map::DefaultHasher;
-use std::collections::{BinaryHeap, HashSet, VecDeque, BTreeSet};
+use std::collections::{BTreeSet, BinaryHeap, HashSet, VecDeque};
 use std::hash::{Hash, Hasher};
 use std::sync::RwLockWriteGuard;
 use std::{
@@ -37,6 +37,7 @@ pub struct Edge {
     pub from: usize,
     pub to: usize,
     pub weight: Option<f64>,
+    pub weight_list: Option<Vec<f64>>,
     pub capacity: Option<f64>,
 }
 
@@ -56,6 +57,18 @@ impl Hash for Edge {
     }
 }
 
+impl Edge {
+    pub fn new (from: usize, to: usize, weight: Option<f64>, capacity: Option<f64>) -> Self {
+        Self {
+            from,
+            to,
+            weight,
+            weight_list: None,
+            capacity,
+        }
+    }
+}
+
 impl<T: Eq + Hash + Copy + Send + Sync + Ord + std::fmt::Debug> Graph<T> {
     pub fn new() -> Self {
         Self {
@@ -71,7 +84,15 @@ impl<T: Eq + Hash + Copy + Send + Sync + Ord + std::fmt::Debug> Graph<T> {
 
     pub fn node_hash(&self) -> u64 {
         let mut hasher = DefaultHasher::new();
-        let btree = BTreeSet::from_iter(self.nodes.as_ref().read().unwrap().iter().flatten().map(|node| node.id));
+        let btree = BTreeSet::from_iter(
+            self.nodes
+                .as_ref()
+                .read()
+                .unwrap()
+                .iter()
+                .flatten()
+                .map(|node| node.id),
+        );
         btree.hash(&mut hasher);
         hasher.finish()
     }
@@ -99,7 +120,7 @@ impl<T: Eq + Hash + Copy + Send + Sync + Ord + std::fmt::Debug> Graph<T> {
                 let Some(to) = other_nodes.get(edge.to).unwrap() else {
                     continue;
                 };
-                let res = self.build_and_add_egde(from.id, to.id, edge.weight, edge.capacity);
+                let res = self.build_and_add_egde(from.id, to.id, edge.weight, edge.weight_list.clone(), edge.capacity);
                 if res.is_err() {
                     println!("error: {res:?}");
                 }
@@ -117,6 +138,7 @@ impl<T: Eq + Hash + Copy + Send + Sync + Ord + std::fmt::Debug> Graph<T> {
         from: T,
         to: T,
         weight: Option<f64>,
+        weight_list: Option<Vec<f64>>,
         capacity: Option<f64>,
     ) -> anyhow::Result<()> {
         let Ok( mut node_map) = self.node_map.as_ref().write() else {
@@ -166,6 +188,7 @@ impl<T: Eq + Hash + Copy + Send + Sync + Ord + std::fmt::Debug> Graph<T> {
                 from: start_node_index,
                 to: end_node_index,
                 weight,
+                weight_list,
                 capacity,
             });
 
@@ -287,7 +310,7 @@ impl<T: Eq + Hash + Copy + Send + Sync + Ord + std::fmt::Debug> Graph<T> {
             .for_each(|edge| {
                 let edge_length = edge.weight.unwrap_or(1.0);
                 explored[edge.to] = true;
-                distances[edge.to] = Some(edge_length);
+                distances[edge.to] = Some(1.0);
                 parents[edge.to] = Some(*start_idx);
                 q.push_back((edge_length, edge));
             });
@@ -332,13 +355,11 @@ impl<T: Eq + Hash + Copy + Send + Sync + Ord + std::fmt::Debug> Graph<T> {
                 for next_edge in next_edges.iter() {
                     let next_edge_target_idx = next_edge.to;
                     if !explored[next_edge_target_idx] {
-                        let next_edge_length = next_edge.weight.unwrap_or(1.0);
-
                         explored[next_edge_target_idx] = true;
-                        distances[next_edge_target_idx] = Some(current_distance + next_edge_length);
+                        distances[next_edge_target_idx] = Some(current_distance + 1.0);
                         parents[next_edge_target_idx] = Some(current_target_idx);
 
-                        q.push_back((current_distance + next_edge_length, next_edge));
+                        q.push_back((current_distance + 1.0, next_edge));
                     }
                 }
             }
@@ -357,6 +378,7 @@ impl<T: Eq + Hash + Copy + Send + Sync + Ord + std::fmt::Debug> Graph<T> {
         origins: Vec<T>,
         destinations: Option<Vec<T>>,
         force: bool,
+        weight_list_index: Option<usize>,
         heuristic: impl Fn(&T, &T) -> f64 + Send + Sync + Copy,
     ) -> HashMap<T, anyhow::Result<Vec<f64>>> {
         if force {
@@ -365,7 +387,7 @@ impl<T: Eq + Hash + Copy + Send + Sync + Ord + std::fmt::Debug> Graph<T> {
                 .map(|s| {
                     (
                         s,
-                        self.astar(s, None, &destinations, heuristic)
+                        self.astar(s, None, &destinations, weight_list_index, heuristic)
                             .map(|res| res.distances),
                     )
                 })
@@ -379,7 +401,7 @@ impl<T: Eq + Hash + Copy + Send + Sync + Ord + std::fmt::Debug> Graph<T> {
                 .map(|s| {
                     (
                         s,
-                        self.astar(s, None, &destinations, heuristic)
+                        self.astar(s, None, &destinations, weight_list_index, heuristic)
                             .map(|res| res.distances),
                     )
                 })
@@ -393,6 +415,7 @@ impl<T: Eq + Hash + Copy + Send + Sync + Ord + std::fmt::Debug> Graph<T> {
         start: T,
         end: Option<T>,
         end_list: &Option<Vec<T>>,
+        weight_list_index: Option<usize>,
         heuristic: impl Fn(&T, &T) -> f64,
     ) -> anyhow::Result<AStarResult<T>> {
         #[derive(Debug, Clone, PartialEq)]
@@ -443,7 +466,7 @@ impl<T: Eq + Hash + Copy + Send + Sync + Ord + std::fmt::Debug> Graph<T> {
 
         let mut target_idx_set = target_idx_list.iter().cloned().collect::<HashSet<_>>();
 
-        let is_single_target = target_idx_list.len() == 1;
+        let is_single_target = end.is_some();
 
         g_score[*start_idx] = Some(0.0);
         q.push(Reverse(AStarNode {
@@ -482,10 +505,15 @@ impl<T: Eq + Hash + Copy + Send + Sync + Ord + std::fmt::Debug> Graph<T> {
             if let Some(next_edges) = edges_access.get(&current_idx) {
                 for next_edge in next_edges.iter() {
                     let next_edge_target_idx = next_edge.to;
-                    let tentative_g_score = g_score[current_idx]
+                    let tentative_g_score = if let Some(weight_list) = &next_edge.weight_list {
+                        g_score[current_idx]
+                            .ok_or(anyhow::anyhow!("current g score was not recorded"))?
+                            + weight_list[weight_list_index.unwrap_or(0)]
+                    } else {
+                        g_score[current_idx]
                         .ok_or(anyhow::anyhow!("current g score was not recorded"))?
-                        + next_edge.weight.unwrap_or(1.0);
-
+                        + next_edge.weight.unwrap_or(1.0)
+                    };
                     if g_score[next_edge_target_idx].is_none()
                         || tentative_g_score < g_score[next_edge_target_idx].unwrap()
                     {
