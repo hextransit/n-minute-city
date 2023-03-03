@@ -30,6 +30,18 @@ pub struct Cell {
     pub layer: i16,
 }
 
+impl PartialOrd for Cell {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.id().cmp(&other.id()))
+    }
+}
+
+impl Ord for Cell {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.id().cmp(&other.id())
+    }
+}
+
 impl Cell {
     // byte representation [l l r r b b a a]
     pub fn id(&self) -> u64 {
