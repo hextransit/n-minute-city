@@ -89,10 +89,10 @@ pub fn h3_network_from_osm(osm_url: &str, layer: OSMLayer) -> anyhow::Result<Gra
                 cell: to,
                 layer: -1,
             };
-            graph.build_and_add_egde(from_cell, from_base_cell, Some(1.0), None, None)?;
-            graph.build_and_add_egde(to_cell, to_base_cell, Some(1.0), None, None)?;
-            graph.build_and_add_egde(from_base_cell, from_cell, Some(1.0), None, None)?;
-            graph.build_and_add_egde(to_base_cell, to_cell, Some(1.0), None, None)?;
+            graph.build_and_add_egde(from_cell, from_base_cell, Some(0.5), None, None)?;
+            graph.build_and_add_egde(to_cell, to_base_cell, Some(0.5), None, None)?;
+            graph.build_and_add_egde(from_base_cell, from_cell, Some(0.5), None, None)?;
+            graph.build_and_add_egde(to_base_cell, to_cell, Some(0.5), None, None)?;
         }
     }
     Ok(graph)

@@ -96,8 +96,8 @@ pub fn calculate_edge_data(
             .filter_map(|window| {
                 let (start, end) = (window[0], window[1]);
                 if let (Ok(start_time), Ok(end_time)) = (
-                    convert_gtfs_time(start.2.unwrap()),
-                    convert_gtfs_time(end.3.unwrap()),
+                    convert_gtfs_time(start.3.unwrap()),
+                    convert_gtfs_time(end.2.unwrap()),
                 ) {
                     if end_time > start_time {
                         let duration = (end_time - start_time).whole_minutes();
