@@ -25,3 +25,4 @@ dependencies:
         - pyarrow
         - seaborn
         - lets_plot
+        - contextily
