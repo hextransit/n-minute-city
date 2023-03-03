@@ -65,7 +65,7 @@ jobs:
           path: wheels
       - name: make changes
         run: |
-          usr/bin/git add wheels/*.whl
+          /usr/bin/git add wheels/*.whl
       - name: commit changes
         uses: peter-evans/create-pull-request@v3
         id: cpr
