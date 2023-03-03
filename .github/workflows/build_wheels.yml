@@ -18,7 +18,7 @@ jobs:
         python-version: ["3.10"]
         os: [ubuntu-latest, macos-latest]
         include:
-          - os: macos-latest
+          - os: macos-10.15
             target: x86_64-apple-darwin
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
@@ -65,7 +65,7 @@ jobs:
           path: wheels
       - name: make changes
         run: |
-          git add wheels/*.whl
+          usr/bin/git add wheels/*.whl
       - name: commit changes
         uses: peter-evans/create-pull-request@v3
         id: cpr

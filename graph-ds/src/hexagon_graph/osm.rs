@@ -31,8 +31,7 @@ pub fn process_osm_pbf(
             |element| {
                 match element {
                     Element::Way(way) => {
-                        if way.tags().any(|(k, v)| tag_value_matches(k, v, &layer)) {
-                            // let node_refs = way.refs().collect::<Vec<_>>();
+                        if way.tags().any(|(k, _)| k == "highway") && way.tags().all(|(k, v)| tag_value_matches(k, v, &layer)) {
                             let node_points = way
                                 .node_locations()
                                 .map(|node| {
@@ -98,25 +97,24 @@ pub fn tag_value_matches(tag: &str, value: &str, layer: &OSMLayer) -> bool {
             if layer == &OSMLayer::Walking {
                 !matches!(value, "private" | "no")
             } else {
-                false
+                true
             }
         }
         "bicycle" => {
             if layer == &OSMLayer::Cycling {
                 !matches!(value, "private" | "no" | "none")
             } else {
-                false
+                true
             }
         }
         "cycleway" => {
             if layer == &OSMLayer::Cycling {
                 !matches!(value, "shared" | "no" | "none")
             } else {
-                false
+                true
             }
         }
         "bycicle_road" => layer == &OSMLayer::Cycling,
-        "bycicle" => layer == &OSMLayer::Cycling,
-        _ => false,
+        _ => true,
     }
 }

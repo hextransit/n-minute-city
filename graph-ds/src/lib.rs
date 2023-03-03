@@ -58,7 +58,7 @@ impl Hash for Edge {
 }
 
 impl Edge {
-    pub fn new (from: usize, to: usize, weight: Option<f64>, capacity: Option<f64>) -> Self {
+    pub fn new(from: usize, to: usize, weight: Option<f64>, capacity: Option<f64>) -> Self {
         Self {
             from,
             to,
@@ -120,7 +120,13 @@ impl<T: Eq + Hash + Copy + Send + Sync + Ord + std::fmt::Debug> Graph<T> {
                 let Some(to) = other_nodes.get(edge.to).unwrap() else {
                     continue;
                 };
-                let res = self.build_and_add_egde(from.id, to.id, edge.weight, edge.weight_list.clone(), edge.capacity);
+                let res = self.build_and_add_egde(
+                    from.id,
+                    to.id,
+                    edge.weight,
+                    edge.weight_list.clone(),
+                    edge.capacity,
+                );
                 if res.is_err() {
                     println!("error: {res:?}");
                 }
@@ -511,8 +517,8 @@ impl<T: Eq + Hash + Copy + Send + Sync + Ord + std::fmt::Debug> Graph<T> {
                             + weight_list[weight_list_index.unwrap_or(0)]
                     } else {
                         g_score[current_idx]
-                        .ok_or(anyhow::anyhow!("current g score was not recorded"))?
-                        + next_edge.weight.unwrap_or(1.0)
+                            .ok_or(anyhow::anyhow!("current g score was not recorded"))?
+                            + next_edge.weight.unwrap_or(1.0)
                     };
                     if g_score[next_edge_target_idx].is_none()
                         || tentative_g_score < g_score[next_edge_target_idx].unwrap()

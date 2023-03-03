@@ -117,12 +117,22 @@ pub fn h3_network_from_gtfs(gtfs_url: &str) -> anyhow::Result<Graph<H3Cell>> {
         };
         if let Some(weight_list) = weight_lists.get(&(from, layer)) {
             // connect from base layer with weight list
-            if weight_list.len() != 24*7 {
+            if weight_list.len() != 24 * 7 {
                 graph.build_and_add_egde(base_cell, from_cell, Some(5.0), None, None)?;
             } else {
-                let list_average = 60.0 / (weight_list.iter().sum::<f64>() / weight_list.len() as f64) / 2.0;
-                let weight_list = weight_list.iter().map(|x| 60.0 / x / 2.0 ).collect::<Vec<_>>();
-                graph.build_and_add_egde(base_cell, from_cell, Some(list_average), Some(weight_list), None)?;    
+                let list_average =
+                    60.0 / (weight_list.iter().sum::<f64>() / weight_list.len() as f64) / 2.0;
+                let weight_list = weight_list
+                    .iter()
+                    .map(|x| 60.0 / x / 2.0)
+                    .collect::<Vec<_>>();
+                graph.build_and_add_egde(
+                    base_cell,
+                    from_cell,
+                    Some(list_average),
+                    Some(weight_list),
+                    None,
+                )?;
             }
         } else {
             // connect from base layer with weight 5
@@ -167,16 +177,26 @@ impl Graph<H3Cell> {
                     if let (Some(Some(start)), Some(Some(end))) =
                         (nodes.get(*key), nodes.get(edge.to))
                     {
+                        let start_layer = if start.id.layer >= 0 {
+                            0.0
+                        } else {
+                            start.id.layer as f32
+                        };
                         let start_coords = h3o::LatLng::from(start.id.cell);
                         let start_plot = (
                             start_coords.lat() as f32,
-                            start.id.layer as f32 / 100.0,
+                            start_layer,
                             start_coords.lng() as f32,
                         );
+                        let end_layer = if end.id.layer >= 0 {
+                            0.0
+                        } else {
+                            end.id.layer as f32
+                        };
                         let end_coords = h3o::LatLng::from(end.id.cell);
                         let end_plot = (
                             end_coords.lat() as f32,
-                            end.id.layer as f32 / 100.0,
+                            end_layer,
                             end_coords.lng() as f32,
                         );
                         Ok((start_plot, end_plot))
@@ -209,10 +229,14 @@ impl PyH3Graph {
 
     pub fn create(&mut self, osm_path: &str, gtfs_path: &str) -> PyResult<()> {
         let start = Instant::now();
-        let mut osm_graph = h3_network_from_osm(osm_path, OSMLayer::Walking).unwrap();
+        let mut osm_graph_walk = h3_network_from_osm(osm_path, OSMLayer::Walking).unwrap();
+
+        let mut osm_graph_bike = h3_network_from_osm(osm_path, OSMLayer::Cycling).unwrap();
+
         println!(
-            "osm graph created with {} nodes in {} s",
-            osm_graph.nr_nodes(),
+            "osm graph created with ({},{}) nodes (walk,bike) in {} s",
+            osm_graph_walk.nr_nodes(),
+            osm_graph_bike.nr_nodes(),
             start.elapsed().as_secs()
         );
 
@@ -225,15 +249,16 @@ impl PyH3Graph {
         );
 
         let start = Instant::now();
-        if osm_graph.merge(&mut gtfs_graph).is_ok() {
-            self.graph = osm_graph;
+        if osm_graph_walk.merge(&mut osm_graph_bike).is_ok() && osm_graph_walk.merge(&mut gtfs_graph).is_ok() {
+            self.graph = osm_graph_walk;
             println!(
                 "merged graph created with {} nodes in {} s",
                 self.graph.nr_nodes(),
                 start.elapsed().as_secs()
-            );
+            );    
         } else {
             println!("failed to merge graphs");
+            return Err(PyErr::new::<pyo3::exceptions::PyException, _>("failed to merge graphs"));
         }
 
         println!("hash: {}", self.graph.node_hash());
@@ -273,7 +298,9 @@ impl PyH3Graph {
             u64::from(destination.cell)
         );
 
-        let astar_res = self.graph.astar(*origin, Some(*destination), &None, None, h);
+        let astar_res = self
+            .graph
+            .astar(*origin, Some(*destination), &None, None, h);
 
         if let Ok(astar_res) = astar_res {
             if let (Some(path), Some(distance)) = (astar_res.path, astar_res.distances.first()) {
