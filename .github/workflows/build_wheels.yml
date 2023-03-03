@@ -66,6 +66,9 @@ jobs:
       - name: make changes
         run: |
           /usr/bin/git add wheels/*.whl
+      - name: list changes
+        run: |
+          /usr/bin/git diff --name-only
       - name: commit changes
         uses: peter-evans/create-pull-request@v3
         id: cpr
