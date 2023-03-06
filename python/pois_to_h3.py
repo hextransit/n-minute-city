@@ -7,10 +7,40 @@ import matplotlib.pyplot as plt
 import geopandas as gpd
 from shapely.geometry import MultiPolygon
 from shapely.geometry import Polygon
+import contextily as cx
 
 
 def flatten(lst):
     return [item for sublist in lst for item in (flatten(sublist) if isinstance(sublist, list) else [sublist])]
+
+def swap_xy(geom):
+    if geom.is_empty:
+        return geom
+
+    if geom.has_z:
+        def swap_xy_coords(coords):
+            for x, y, z in coords:
+                yield (y, x, z)
+    else:
+        def swap_xy_coords(coords):
+            for x, y in coords:
+                yield (y, x)
+
+    # Process coordinates from each supported geometry type
+    if geom.type in ('Point', 'LineString', 'LinearRing'):
+        return type(geom)(list(swap_xy_coords(geom.coords)))
+    elif geom.type == 'Polygon':
+        ring = geom.exterior
+        shell = type(ring)(list(swap_xy_coords(ring.coords)))
+        holes = list(geom.interiors)
+        for pos, ring in enumerate(holes):
+            holes[pos] = type(ring)(list(swap_xy_coords(ring.coords)))
+        return type(geom)(shell, holes)
+    elif geom.type.startswith('Multi') or geom.type == 'GeometryCollection':
+        # Recursive call
+        return type(geom)([swap_xy(part) for part in geom.geoms])
+    else:
+        raise ValueError('Type %r not recognized' % geom.type)
 
 def h3_list_to_multi_poly(h3_list):
     h3_polygon = h3.h3_set_to_multi_polygon(h3_list)
@@ -27,6 +57,9 @@ def all_shapley_geo_to_h3(obj, H3_RES):
     geom_type = obj.geom_type
     # assert geom_type valid at some point
 
+    # shapely and h3 swap x and y:
+    obj = swap_xy(obj)
+
     if geom_type=='MultiPolygon':
         # this will break in a different version of shapley, use this instead of iterating polys in multipoly: 
         # multi_poly.coords or .geoms
@@ -40,7 +73,7 @@ def all_shapley_geo_to_h3(obj, H3_RES):
     elif geom_type=='LineString':
         return LineString_to_hex(obj, H3_RES)
     elif geom_type=='Point':
-        return h3.geo_to_h3(obj.y, obj.x, H3_RES)
+        return h3.geo_to_h3(obj.x, obj.y, H3_RES)
     else:
         print(f"unimplemented geom type: {geom_type}")
     
@@ -104,6 +137,8 @@ def df_manipulations(pois, H3_RES, osm_filter, category_set, osm_tag_mapping):
     h3_df = h3_df.explode('h3_index')
     # for some reason other categories are still in the df - not many - put earlier for efficiency
     h3_df = h3_df[h3_df['category'].isin(category_set)]
+    # get rid of nans
+    h3_df = h3_df[~h3_df['h3_index'].isna()]
     
     return h3_df[['h3_index','category']]
 
