@@ -154,7 +154,6 @@ pub fn process_gtfs(
     url: &str,
     h3_resolution: h3o::Resolution,
 ) -> anyhow::Result<GtfsProcessingResult> {
-
     println!("getting GTFS feed from {url}");
 
     let feed = gtfs_structures::GtfsReader::default()
