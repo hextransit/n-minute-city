@@ -56,24 +56,22 @@ pub fn cell_graph_from_mpk(path: &str) -> anyhow::Result<Graph<Cell>> {
     Ok(graph)
 }
 
-pub fn h3_network_from_osm(osm_url: &str, layer: OSMLayer) -> anyhow::Result<Graph<H3Cell>> {
+pub fn h3_network_from_osm(
+    osm_url: &str,
+    layer: Option<OSMLayer>,
+) -> anyhow::Result<Graph<H3Cell>> {
     let edge_data = process_osm_pbf(osm_url, layer, h3o::Resolution::Twelve)?;
 
     let mut graph = Graph::<H3Cell>::new();
 
-    let layer_id: i16 = match layer {
-        OSMLayer::Cycling => -2,
-        OSMLayer::Walking => -1,
-    };
-
-    for ((_, from, to), weight) in edge_data {
+    for ((layer, from, to), weight) in edge_data {
         let from_cell = H3Cell {
             cell: from,
-            layer: layer_id,
+            layer: layer.get_id(),
         };
         let to_cell = H3Cell {
             cell: to,
-            layer: layer_id,
+            layer: layer.get_id(),
         };
         // connect the two cells in both directions
         graph.build_and_add_egde(from_cell, to_cell, Some(weight), None, None)?;
@@ -117,12 +115,24 @@ pub fn h3_network_from_gtfs(gtfs_url: &str) -> anyhow::Result<Graph<H3Cell>> {
         };
         if let Some(weight_list) = weight_lists.get(&(from, layer)) {
             // connect from base layer with weight list
-            if weight_list.len() != 24*7 {
+            if weight_list.len() != 24 * 7 {
                 graph.build_and_add_egde(base_cell, from_cell, Some(5.0), None, None)?;
             } else {
-                let list_average = 60.0 / (weight_list.iter().sum::<f64>() / weight_list.len() as f64) / 2.0;
-                let weight_list = weight_list.iter().map(|x| 60.0 / x / 2.0 ).collect::<Vec<_>>();
-                graph.build_and_add_egde(base_cell, from_cell, Some(list_average), Some(weight_list), None)?;    
+                let list_average = 60.0
+                    / (weight_list.iter().filter(|x| !x.is_infinite()).sum::<f64>()
+                        / weight_list.len() as f64)
+                    / 2.0;
+                let weight_list = weight_list
+                    .iter()
+                    .map(|x| 60.0 / x / 2.0)
+                    .collect::<Vec<_>>();
+                graph.build_and_add_egde(
+                    base_cell,
+                    from_cell,
+                    Some(list_average),
+                    Some(weight_list),
+                    None,
+                )?;
             }
         } else {
             // connect from base layer with weight 5
@@ -167,18 +177,25 @@ impl Graph<H3Cell> {
                     if let (Some(Some(start)), Some(Some(end))) =
                         (nodes.get(*key), nodes.get(edge.to))
                     {
+                        let start_layer = if start.id.layer >= 0 {
+                            0.0
+                        } else {
+                            start.id.layer as f32
+                        };
                         let start_coords = h3o::LatLng::from(start.id.cell);
                         let start_plot = (
                             start_coords.lat() as f32,
-                            start.id.layer as f32 / 100.0,
+                            start_layer,
                             start_coords.lng() as f32,
                         );
+                        let end_layer = if end.id.layer >= 0 {
+                            0.0
+                        } else {
+                            end.id.layer as f32
+                        };
                         let end_coords = h3o::LatLng::from(end.id.cell);
-                        let end_plot = (
-                            end_coords.lat() as f32,
-                            end.id.layer as f32 / 100.0,
-                            end_coords.lng() as f32,
-                        );
+                        let end_plot =
+                            (end_coords.lat() as f32, end_layer, end_coords.lng() as f32);
                         Ok((start_plot, end_plot))
                     } else {
                         Err(anyhow::anyhow!("node not found"))
@@ -209,9 +226,10 @@ impl PyH3Graph {
 
     pub fn create(&mut self, osm_path: &str, gtfs_path: &str) -> PyResult<()> {
         let start = Instant::now();
-        let mut osm_graph = h3_network_from_osm(osm_path, OSMLayer::Walking).unwrap();
+        let mut osm_graph = h3_network_from_osm(osm_path, None).unwrap();
+
         println!(
-            "osm graph created with {} nodes in {} s",
+            "osm graph created with ({}) nodes (walk + bike) in {} s",
             osm_graph.nr_nodes(),
             start.elapsed().as_secs()
         );
@@ -234,6 +252,9 @@ impl PyH3Graph {
             );
         } else {
             println!("failed to merge graphs");
+            return Err(PyErr::new::<pyo3::exceptions::PyException, _>(
+                "failed to merge graphs",
+            ));
         }
 
         println!("hash: {}", self.graph.node_hash());
@@ -243,10 +264,15 @@ impl PyH3Graph {
 
     pub fn astar_path(&self, origin: u64, destination: u64) -> PyResult<(Vec<u64>, f64)> {
         fn h(start_cell: &H3Cell, end_cell: &H3Cell) -> f64 {
-            start_cell
-                .cell
-                .grid_distance(end_cell.cell)
-                .unwrap_or(i32::MAX) as f64
+            if let Ok(dist) = start_cell.cell.grid_distance(end_cell.cell) {
+                dist as f64
+            } else {
+                println!(
+                    "grid distance failed between {} and {}",
+                    start_cell.cell, end_cell.cell
+                );
+                i32::MAX as f64
+            }
         }
 
         let node_map_access = self.graph.node_map.as_ref().read().unwrap();
@@ -273,7 +299,9 @@ impl PyH3Graph {
             u64::from(destination.cell)
         );
 
-        let astar_res = self.graph.astar(*origin, Some(*destination), &None, None, h);
+        let astar_res = self
+            .graph
+            .astar(*origin, Some(*destination), &None, None, h);
 
         if let Ok(astar_res) = astar_res {
             if let (Some(path), Some(distance)) = (astar_res.path, astar_res.distances.first()) {

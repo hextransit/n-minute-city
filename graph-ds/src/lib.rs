@@ -58,7 +58,7 @@ impl Hash for Edge {
 }
 
 impl Edge {
-    pub fn new (from: usize, to: usize, weight: Option<f64>, capacity: Option<f64>) -> Self {
+    pub fn new(from: usize, to: usize, weight: Option<f64>, capacity: Option<f64>) -> Self {
         Self {
             from,
             to,
@@ -120,7 +120,13 @@ impl<T: Eq + Hash + Copy + Send + Sync + Ord + std::fmt::Debug> Graph<T> {
                 let Some(to) = other_nodes.get(edge.to).unwrap() else {
                     continue;
                 };
-                let res = self.build_and_add_egde(from.id, to.id, edge.weight, edge.weight_list.clone(), edge.capacity);
+                let res = self.build_and_add_egde(
+                    from.id,
+                    to.id,
+                    edge.weight,
+                    edge.weight_list.clone(),
+                    edge.capacity,
+                );
                 if res.is_err() {
                     println!("error: {res:?}");
                 }
@@ -338,17 +344,6 @@ impl<T: Eq + Hash + Copy + Send + Sync + Ord + std::fmt::Debug> Graph<T> {
                 }
             }
 
-            if let Some(target_list) = &global_target_list {
-                if target_list.contains(&current_target_idx) {
-                    if let Some(Some(node)) = nodes_access.get(current_target_idx) {
-                        let res = end_distances.insert(node.id, current_distance);
-                        if res.is_some() {
-                            println!("whoopsie");
-                        }
-                    }
-                }
-            }
-
             // we have not found the target, add unexplored edges from the target to the queue
             // check if there are any unexplored edges from the target
             if let Some(next_edges) = edges_access.get(&current_target_idx) {
@@ -368,6 +363,9 @@ impl<T: Eq + Hash + Copy + Send + Sync + Ord + std::fmt::Debug> Graph<T> {
         if end_list.is_some() {
             let distances = end_distances.into_values().map(Some).collect();
             return Ok((None, distances));
+        }
+        if end.is_some() {
+            return Ok((None, vec![None]));
         }
 
         Ok((None, distances))
@@ -505,14 +503,16 @@ impl<T: Eq + Hash + Copy + Send + Sync + Ord + std::fmt::Debug> Graph<T> {
             if let Some(next_edges) = edges_access.get(&current_idx) {
                 for next_edge in next_edges.iter() {
                     let next_edge_target_idx = next_edge.to;
-                    let tentative_g_score = if let Some(weight_list) = &next_edge.weight_list {
+                    let tentative_g_score = if let (Some(weight_list), Some(list_idx)) =
+                        (&next_edge.weight_list, weight_list_index)
+                    {
                         g_score[current_idx]
                             .ok_or(anyhow::anyhow!("current g score was not recorded"))?
-                            + weight_list[weight_list_index.unwrap_or(0)]
+                            + weight_list[list_idx]
                     } else {
                         g_score[current_idx]
-                        .ok_or(anyhow::anyhow!("current g score was not recorded"))?
-                        + next_edge.weight.unwrap_or(1.0)
+                            .ok_or(anyhow::anyhow!("current g score was not recorded"))?
+                            + next_edge.weight.unwrap_or(1.0)
                     };
                     if g_score[next_edge_target_idx].is_none()
                         || tentative_g_score < g_score[next_edge_target_idx].unwrap()
@@ -568,6 +568,7 @@ impl<T: Eq + Hash + Copy + Send + Sync + Ord + std::fmt::Debug> Graph<T> {
     }
 }
 
+#[derive(Debug)]
 pub struct AStarResult<T> {
     pub path: Option<Vec<T>>,
     pub single_target: bool,
