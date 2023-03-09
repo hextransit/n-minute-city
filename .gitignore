@@ -3,3 +3,4 @@
 .ipynb_checkpoints
 /resources
 *.png
+.DS_Store
