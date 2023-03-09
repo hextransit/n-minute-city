@@ -450,6 +450,9 @@ impl<T: Eq + Hash + Copy + Send + Sync + Ord + std::fmt::Debug> Graph<T> {
         };
 
         let target_list = if let Some(end_list) = end_list {
+            if end_list.is_empty() {
+                return Err(anyhow::anyhow!("no end node provided"));
+            }
             end_list.clone()
         } else if let Some(end) = end {
             vec![end]
