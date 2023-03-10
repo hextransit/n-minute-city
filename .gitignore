@@ -4,3 +4,4 @@
 /resources
 *.png
 .DS_Store
+*.pyc
