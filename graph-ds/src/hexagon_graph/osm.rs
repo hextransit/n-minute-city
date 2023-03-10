@@ -3,6 +3,8 @@ use std::collections::HashSet;
 use h3o::CellIndex;
 use osmpbf::{Element, ElementReader};
 
+use super::OSMOptions;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum OSMLayer {
     Cycling,
@@ -39,7 +41,7 @@ impl OSMLayer {
 #[allow(clippy::type_complexity)]
 pub fn process_osm_pbf(
     url: &str,
-    layer: Option<OSMLayer>,
+    options: &OSMOptions,
     h3_resolution: h3o::Resolution,
 ) -> anyhow::Result<Vec<((OSMLayer, CellIndex, CellIndex), f64)>> {
     let reader = ElementReader::from_path(url)?;
@@ -52,7 +54,7 @@ pub fn process_osm_pbf(
             |element| {
                 match element {
                     Element::Way(way) => {
-                        let layers = if let Some(layer) = layer {
+                        let layers = if let Some(layer) = options.layer {
                             vec![layer]
                         } else {
                             vec![OSMLayer::Cycling, OSMLayer::Walking]

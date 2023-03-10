@@ -16,6 +16,20 @@ use self::{
     osm::{process_osm_pbf, OSMLayer},
 };
 
+pub struct OSMOptions {
+    layer: Option<OSMLayer>,
+    bike_penalty: f64
+}
+
+impl Default for OSMOptions {
+    fn default() -> Self {
+        OSMOptions {
+            layer: None,
+            bike_penalty: 1.0
+        }
+    }
+}
+
 #[cfg(feature = "pyo3")]
 use pyo3::prelude::*;
 
@@ -58,9 +72,9 @@ pub fn cell_graph_from_mpk(path: &str) -> anyhow::Result<Graph<Cell>> {
 
 pub fn h3_network_from_osm(
     osm_url: &str,
-    layer: Option<OSMLayer>,
+    options: &OSMOptions,
 ) -> anyhow::Result<Graph<H3Cell>> {
-    let edge_data = process_osm_pbf(osm_url, layer, h3o::Resolution::Twelve)?;
+    let edge_data = process_osm_pbf(osm_url, options, h3o::Resolution::Twelve)?;
 
     let mut graph = Graph::<H3Cell>::new();
 
@@ -87,10 +101,10 @@ pub fn h3_network_from_osm(
                 cell: to,
                 layer: -1,
             };
-            graph.build_and_add_egde(from_cell, from_base_cell, Some(0.5), None, None)?;
-            graph.build_and_add_egde(to_cell, to_base_cell, Some(0.5), None, None)?;
-            graph.build_and_add_egde(from_base_cell, from_cell, Some(0.5), None, None)?;
-            graph.build_and_add_egde(to_base_cell, to_cell, Some(0.5), None, None)?;
+            graph.build_and_add_egde(from_cell, from_base_cell, Some(options.bike_penalty), None, None)?;
+            graph.build_and_add_egde(to_cell, to_base_cell, Some(options.bike_penalty), None, None)?;
+            graph.build_and_add_egde(from_base_cell, from_cell, Some(options.bike_penalty), None, None)?;
+            graph.build_and_add_egde(to_base_cell, to_cell, Some(options.bike_penalty), None, None)?;
         }
     }
     Ok(graph)
@@ -211,6 +225,8 @@ impl Graph<H3Cell> {
 #[pyclass]
 pub struct PyH3Graph {
     graph: Graph<H3Cell>,
+    options: OSMOptions, 
+    k_ring: u32,
 }
 
 #[cfg(feature = "pyo3")]
@@ -218,15 +234,20 @@ pub struct PyH3Graph {
 #[pymethods]
 impl PyH3Graph {
     #[new]
-    pub fn new() -> Self {
+    pub fn new(bike_penalty: f64, k_ring: u32) -> Self {
         Self {
-            graph: Graph::<H3Cell>::new(),
+            graph: Graph::<H3Cell>::new(),            
+            options: OSMOptions {
+                layer: None,
+                bike_penalty,
+            },
+            k_ring,
         }
     }
 
     pub fn create(&mut self, osm_path: &str, gtfs_path: &str) -> PyResult<()> {
         let start = Instant::now();
-        let mut osm_graph = h3_network_from_osm(osm_path, None).unwrap();
+        let mut osm_graph = h3_network_from_osm(osm_path, &self.options).unwrap();
 
         println!(
             "osm graph created with ({}) nodes (walk + bike) in {} s",
@@ -276,7 +297,7 @@ impl PyH3Graph {
         }
 
         let node_map_access = self.graph.node_map.as_ref().read().unwrap();
-        let node_mapping = u64list_to_h3cells(&node_map_access, vec![origin, destination]);
+        let node_mapping = u64list_to_h3cells(&node_map_access, vec![origin, destination], self.k_ring);
 
         node_mapping.iter().for_each(|(original, mapped)| {
             if let Some(mapped) = mapped {
@@ -339,8 +360,8 @@ impl PyH3Graph {
         // map each origin and destination to an H3 cell that is present in the graph
         let node_map_access = self.graph.node_map.as_ref().read().unwrap();
 
-        let origins = u64list_to_h3cells(&node_map_access, origins);
-        let destinations = u64list_to_h3cells(&node_map_access, destinations);
+        let origins = u64list_to_h3cells(&node_map_access, origins, self.k_ring);
+        let destinations = u64list_to_h3cells(&node_map_access, destinations, self.k_ring);
 
         let distances = self.graph.matrix_astar_distance(
             origins.iter().filter_map(|(_, c)| *c).collect::<Vec<_>>(),
@@ -354,6 +375,8 @@ impl PyH3Graph {
             hour_of_week,
             h,
         );
+
+        println!("matrix distance computed for {} origins - got {} results", origins.len(), distances.len());
 
         Ok(distances
             .into_par_iter()
@@ -376,6 +399,7 @@ impl PyH3Graph {
 fn u64list_to_h3cells(
     node_access: &RwLockReadGuard<BiHashMap<H3Cell, usize>>,
     list: Vec<u64>,
+    k_ring: u32,
 ) -> BiHashMap<u64, Option<H3Cell>> {
     list.into_iter()
         .filter_map(|origin| {
@@ -387,7 +411,7 @@ fn u64list_to_h3cells(
             if node_access.contains_left(&cell) {
                 Some((origin, Some(cell)))
             } else {
-                let neighbors = cell_index.grid_ring_fast(2);
+                let neighbors = cell_index.grid_ring_fast(k_ring);
                 for neighbor in neighbors.flatten() {
                     let neighbor_cell = H3Cell {
                         cell: neighbor,
@@ -406,7 +430,7 @@ fn u64list_to_h3cells(
 #[cfg(feature = "pyo3")]
 impl Default for PyH3Graph {
     fn default() -> Self {
-        Self::new()
+        Self::new(1.0, 2)
     }
 }
 
