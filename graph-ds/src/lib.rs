@@ -535,7 +535,16 @@ impl<T: Eq + Hash + Copy + Send + Sync + Ord + std::fmt::Debug> Graph<T> {
             }
         }
 
-        Err(anyhow::anyhow!("no path found"))
+        return Ok(AStarResult {
+            path: None,
+            single_target: is_single_target,
+            distances: target_idx_list
+                .into_iter()
+                .filter_map(|idx| g_score[*idx])
+                .collect::<Vec<_>>(),
+        });
+
+        // Err(anyhow::anyhow!("no path found"))
     }
 
     pub fn backtrace(
