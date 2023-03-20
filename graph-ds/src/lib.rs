@@ -244,22 +244,23 @@ impl<T: Eq + Hash + Copy + Send + Sync + Ord + std::fmt::Debug> Graph<T> {
     /// this function is parallelized using rayon
     pub fn matrix_bfs_distance(
         &self,
-        origins: Vec<T>,
-        destinations: Option<Vec<T>>,
+        origins: &Vec<T>,
+        destinations: Option<&Vec<T>>,
         force: bool,
     ) -> HashMap<T, anyhow::Result<Vec<Option<f64>>>> {
+        let map_func = |s: &T| (*s, self.bfs(s, None, destinations).map(|res| res.1));
         if force {
             origins
                 .into_par_iter()
-                .map(|s| (s, self.bfs(s, None, &destinations).map(|res| res.1)))
+                .map(map_func)
                 .collect()
         } else {
             // removes duplicates before iteration
             origins
                 .into_iter()
-                .collect::<HashSet<T>>()
+                .collect::<HashSet<&T>>()
                 .into_par_iter()
-                .map(|s| (s, self.bfs(s, None, &destinations).map(|res| res.1)))
+                .map(map_func)
                 .collect()
         }
     }
@@ -271,9 +272,9 @@ impl<T: Eq + Hash + Copy + Send + Sync + Ord + std::fmt::Debug> Graph<T> {
     /// the nodes will be in the order of the path
     pub fn bfs(
         &self,
-        start: T,
-        end: Option<T>,
-        end_list: &Option<Vec<T>>,
+        start: &T,
+        end: Option<&T>,
+        end_list: Option<&Vec<T>>,
     ) -> anyhow::Result<(Option<Vec<T>>, Vec<Option<f64>>)> {
         let mut q: VecDeque<(f64, &Edge)> = VecDeque::new();
 
@@ -285,9 +286,9 @@ impl<T: Eq + Hash + Copy + Send + Sync + Ord + std::fmt::Debug> Graph<T> {
 
         // get the edges from the start node
         let node_map_access = self.node_map.as_ref().read().unwrap();
-        let Some(start_idx) = node_map_access.get_by_left(&start) else {
-            return Err(anyhow::anyhow!("start node not found in node map"));
-        };
+        let start_idx = *node_map_access
+            .get_by_left(start)
+            .ok_or_else(|| anyhow::anyhow!("start node {start:?} not found in node map"))?;
 
         let global_target_idx = if let Some(end) = &end {
             node_map_access.get_by_left(end)
@@ -304,26 +305,26 @@ impl<T: Eq + Hash + Copy + Send + Sync + Ord + std::fmt::Debug> Graph<T> {
                 .collect::<HashSet<_>>()
         });
 
-        explored[*start_idx] = true;
-        distances[*start_idx] = Some(0.0);
+        explored[start_idx] = true;
+        distances[start_idx] = Some(0.0);
 
         let edges_access = self.edges.as_ref().read().unwrap();
 
         edges_access
-            .get(start_idx)
+            .get(&start_idx)
             .ok_or_else(|| anyhow::anyhow!("start node not found in adjacency list"))?
             .iter()
             .for_each(|edge| {
                 let edge_length = edge.weight.unwrap_or(1.0);
                 explored[edge.to] = true;
                 distances[edge.to] = Some(1.0);
-                parents[edge.to] = Some(*start_idx);
+                parents[edge.to] = Some(start_idx);
                 q.push_back((edge_length, edge));
             });
 
         if let Some(target_list) = &global_target_list {
-            if target_list.contains(start_idx) {
-                end_distances.insert(start, 0.0);
+            if target_list.contains(&start_idx) {
+                end_distances.insert(*start, 0.0);
             }
         }
 
@@ -338,7 +339,7 @@ impl<T: Eq + Hash + Copy + Send + Sync + Ord + std::fmt::Debug> Graph<T> {
             if let Some(end) = global_target_idx {
                 if &current_target_idx == end {
                     // backtrace the path in parents
-                    let path = self.backtrace(&parents, *end, *start_idx);
+                    let path = self.backtrace(&parents, *end, start_idx);
 
                     return Ok((path.ok(), vec![Some(current_distance)]));
                 }
@@ -373,36 +374,30 @@ impl<T: Eq + Hash + Copy + Send + Sync + Ord + std::fmt::Debug> Graph<T> {
 
     pub fn matrix_astar_distance(
         &self,
-        origins: Vec<T>,
-        destinations: Option<Vec<T>>,
+        origins: &Vec<T>,
+        destinations: Option<&Vec<T>>,
         force: bool,
         weight_list_index: Option<usize>,
         heuristic: impl Fn(&T, &T) -> f64 + Send + Sync + Copy,
-    ) -> HashMap<T, anyhow::Result<Vec<f64>>> {
+    ) -> HashMap<T, anyhow::Result<Vec<Option<f64>>>> {
+        let map_func = |s: &T| {
+            (
+                *s,
+                self.astar(s, None, destinations, weight_list_index, heuristic)
+                    .map(|res| res.distances),
+            )
+        };
         if force {
             origins
                 .into_par_iter()
-                .map(|s| {
-                    (
-                        s,
-                        self.astar(s, None, &destinations, weight_list_index, heuristic)
-                            .map(|res| res.distances),
-                    )
-                })
-                .collect()
+                .map(map_func).collect()
         } else {
             // removes duplicates before iteration
             origins
-                .into_iter()
-                .collect::<HashSet<T>>()
+                .iter()
+                .collect::<HashSet<&T>>()
                 .into_par_iter()
-                .map(|s| {
-                    (
-                        s,
-                        self.astar(s, None, &destinations, weight_list_index, heuristic)
-                            .map(|res| res.distances),
-                    )
-                })
+                .map(map_func)
                 .collect()
         }
     }
@@ -410,9 +405,9 @@ impl<T: Eq + Hash + Copy + Send + Sync + Ord + std::fmt::Debug> Graph<T> {
     /// calculates the shortest path between two nodes using the A* algorithm, returns the path and the distance
     pub fn astar(
         &self,
-        start: T,
-        end: Option<T>,
-        end_list: &Option<Vec<T>>,
+        start: &T,
+        end: Option<&T>,
+        end_list: Option<&Vec<T>>,
         weight_list_index: Option<usize>,
         heuristic: impl Fn(&T, &T) -> f64,
     ) -> anyhow::Result<AStarResult<T>> {
@@ -445,9 +440,9 @@ impl<T: Eq + Hash + Copy + Send + Sync + Ord + std::fmt::Debug> Graph<T> {
         let node_list_access = self.nodes.as_ref().read().unwrap();
         let edges_access = self.edges.as_ref().read().unwrap();
 
-        let Some(start_idx) = node_map_access.get_by_left(&start) else {
-            return Err(anyhow::anyhow!("start node not found in node map"));
-        };
+        let start_idx = *node_map_access
+            .get_by_left(start)
+            .ok_or_else(|| anyhow::anyhow!("start node {start:?} not found in node map"))?;
 
         let target_list = if let Some(end_list) = end_list {
             if end_list.is_empty() {
@@ -455,7 +450,7 @@ impl<T: Eq + Hash + Copy + Send + Sync + Ord + std::fmt::Debug> Graph<T> {
             }
             end_list.clone()
         } else if let Some(end) = end {
-            vec![end]
+            vec![*end]
         } else {
             return Err(anyhow::anyhow!("no end node provided"));
         };
@@ -469,9 +464,9 @@ impl<T: Eq + Hash + Copy + Send + Sync + Ord + std::fmt::Debug> Graph<T> {
 
         let is_single_target = end.is_some();
 
-        g_score[*start_idx] = Some(0.0);
+        g_score[start_idx] = Some(0.0);
         q.push(Reverse(AStarNode {
-            id: *start_idx,
+            id: start_idx,
             f_score: heuristic(&start, &target_list[0]),
         }));
 
@@ -484,12 +479,11 @@ impl<T: Eq + Hash + Copy + Send + Sync + Ord + std::fmt::Debug> Graph<T> {
 
                 target_idx_set.remove(&current_idx);
                 if is_single_target {
-                    let path = self.backtrace(&parents, current_idx, *start_idx)?;
+                    let path = self.backtrace(&parents, current_idx, start_idx)?;
                     return Ok(AStarResult {
                         path: Some(path),
                         single_target: is_single_target,
-                        distances: vec![g_score[current_idx]
-                            .ok_or(anyhow::anyhow!("target g score was not recorded"))?],
+                        distances: vec![g_score[current_idx]],
                     });
                 } else if target_idx_set.is_empty() {
                     return Ok(AStarResult {
@@ -497,7 +491,7 @@ impl<T: Eq + Hash + Copy + Send + Sync + Ord + std::fmt::Debug> Graph<T> {
                         single_target: is_single_target,
                         distances: target_idx_list
                             .into_iter()
-                            .filter_map(|idx| g_score[*idx])
+                            .map(|idx| g_score[*idx])
                             .collect::<Vec<_>>(),
                     });
                 }
@@ -535,16 +529,18 @@ impl<T: Eq + Hash + Copy + Send + Sync + Ord + std::fmt::Debug> Graph<T> {
             }
         }
 
-        return Ok(AStarResult {
-            path: None,
-            single_target: is_single_target,
-            distances: target_idx_list
-                .into_iter()
-                .filter_map(|idx| g_score[*idx])
-                .collect::<Vec<_>>(),
-        });
-
-        // Err(anyhow::anyhow!("no path found"))
+        if end_list.is_some() {
+            Ok(AStarResult {
+                path: None,
+                single_target: is_single_target,
+                distances: target_idx_list
+                    .into_iter()
+                    .map(|idx| g_score[*idx])
+                    .collect::<Vec<_>>(),
+            })
+        } else {
+            Err(anyhow::anyhow!("no path found"))
+        }
     }
 
     pub fn backtrace(
@@ -584,7 +580,7 @@ impl<T: Eq + Hash + Copy + Send + Sync + Ord + std::fmt::Debug> Graph<T> {
 pub struct AStarResult<T> {
     pub path: Option<Vec<T>>,
     pub single_target: bool,
-    pub distances: Vec<f64>,
+    pub distances: Vec<Option<f64>>,
 }
 
 impl<T: Eq + Hash + Copy + Send + Ord + Sync + std::fmt::Debug> Default for Graph<T> {

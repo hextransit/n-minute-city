@@ -1,10 +1,10 @@
-use graph_ds::hexagon_graph::{h3_network_from_gtfs, h3_network_from_osm};
+use graph_ds::hexagon_graph::{h3_network_from_gtfs, h3_network_from_osm, OSMOptions};
 use plotters::{prelude::*, style::full_palette::ORANGE};
 use std::time::Instant;
 
 fn main() -> anyhow::Result<()> {
     let start = Instant::now();
-    let mut osm_graph = h3_network_from_osm("resources/denmark-processed.osm.pbf", None).unwrap();
+    let mut osm_graph = h3_network_from_osm("resources/denmark-processed.osm.pbf", &OSMOptions::default()).unwrap();
 
     // let mut cycle_graph = h3_network_from_osm(
     //     "resources/copenhagen-processed.osm.pbf",

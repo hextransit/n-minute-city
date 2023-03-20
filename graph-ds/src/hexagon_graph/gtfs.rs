@@ -129,10 +129,10 @@ pub fn calculate_edge_data(
                         convert_gtfs_time(end.2.unwrap()),
                     ) {
                         if end_time > start_time {
-                            let duration = (end_time - start_time).whole_minutes();
+                            let duration = (end_time - start_time).as_seconds_f64() / 60.0;
                             Some((
                                 (*route_layer_map.get(route_id).unwrap_or(&0), start.0, end.0),
-                                duration as f64,
+                                duration,
                             ))
                         } else {
                             None
