@@ -378,12 +378,14 @@ impl<T: Eq + Hash + Copy + Send + Sync + Ord + std::fmt::Debug> Graph<T> {
         destinations: Option<&Vec<T>>,
         force: bool,
         weight_list_index: Option<usize>,
+        infinity: Option<f64>,
+        dynamic_infinity: Option<bool>,
         heuristic: impl Fn(&T, &T) -> f64 + Send + Sync + Copy,
     ) -> HashMap<T, anyhow::Result<Vec<Option<f64>>>> {
         let map_func = |s: &T| {
             (
                 *s,
-                self.astar(s, None, destinations, weight_list_index, heuristic)
+                self.astar(s, None, destinations, infinity, dynamic_infinity, weight_list_index, heuristic)
                     .map(|res| res.distances),
             )
         };
@@ -408,6 +410,8 @@ impl<T: Eq + Hash + Copy + Send + Sync + Ord + std::fmt::Debug> Graph<T> {
         start: &T,
         end: Option<&T>,
         end_list: Option<&Vec<T>>,
+        infinity: Option<f64>,
+        dynamic_infinity: Option<bool>,
         weight_list_index: Option<usize>,
         heuristic: impl Fn(&T, &T) -> f64,
     ) -> anyhow::Result<AStarResult<T>> {
@@ -455,6 +459,8 @@ impl<T: Eq + Hash + Copy + Send + Sync + Ord + std::fmt::Debug> Graph<T> {
             return Err(anyhow::anyhow!("no end node provided"));
         };
 
+        let mut infinity = infinity.unwrap_or(std::f64::INFINITY);
+
         let target_idx_list = target_list
             .iter()
             .filter_map(|end| node_map_access.get_by_left(end))
@@ -474,8 +480,15 @@ impl<T: Eq + Hash + Copy + Send + Sync + Ord + std::fmt::Debug> Graph<T> {
             let current = q.pop().ok_or(anyhow::anyhow!("queue was empty"))?.0;
             let current_idx = current.id;
 
+            if g_score[current_idx].unwrap_or(0.0) > infinity {
+                continue;
+            }
+
             if target_idx_set.contains(&current_idx) {
                 // found the target, backtrace the path
+                if dynamic_infinity.unwrap_or(false) {
+                    infinity = g_score[current_idx].unwrap_or(f64::INFINITY);
+                }
 
                 target_idx_set.remove(&current_idx);
                 if is_single_target {

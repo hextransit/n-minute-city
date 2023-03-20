@@ -11,7 +11,7 @@ use std::{
 
 use crate::{Edge, Graph};
 use bimap::BiHashMap;
-use cell::Cell;
+use cell::HexCell;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -22,14 +22,16 @@ use self::{
 };
 
 pub struct OSMOptions {
-    layer: Option<OSMLayer>,
+    osm_layer: Option<OSMLayer>,
+    gtfs_layer: bool,
     bike_penalty: f64,
 }
 
 impl Default for OSMOptions {
     fn default() -> Self {
         OSMOptions {
-            layer: None,
+            osm_layer: None,
+            gtfs_layer: true,
             bike_penalty: 1.0,
         }
     }
@@ -40,11 +42,11 @@ use pyo3::prelude::*;
 
 /// each node is a hexagon cell
 /// this uses a simple hexagon grid, which does support layering
-impl Graph<Cell> {
+impl Graph<HexCell> {
     /// connect a cell with a given list of direct neighbors, create the nodes in the graph if needed
     pub fn connect_cell(
         &mut self,
-        cell: Cell,
+        cell: HexCell,
         neighbors: &[Direction],
         weight: Option<f64>,
     ) -> anyhow::Result<()> {
@@ -59,7 +61,7 @@ impl Graph<Cell> {
     }
 }
 
-pub fn cell_graph_from_mpk(path: &str) -> anyhow::Result<Graph<Cell>> {
+pub fn cell_graph_from_mpk(path: &str) -> anyhow::Result<Graph<HexCell>> {
     #[derive(Serialize, Deserialize, Debug, Clone)]
     struct MpkStruct {
         map_name: String,
@@ -67,7 +69,7 @@ pub fn cell_graph_from_mpk(path: &str) -> anyhow::Result<Graph<Cell>> {
         map_crc: u32,
         raduis: f32,
         z_borders: Vec<i32>,
-        transitions: BTreeMap<(Cell, Cell), f32>,
+        transitions: BTreeMap<(HexCell, HexCell), f32>,
         pre_calculated_distances: HashMap<String, Vec<f32>>,
     }
     let file = std::fs::File::open(&path)?;
@@ -75,8 +77,8 @@ pub fn cell_graph_from_mpk(path: &str) -> anyhow::Result<Graph<Cell>> {
     let current_hex_graph: MpkStruct = rmp_serde::from_read(brotli_reader)?;
 
     //reader
-    let mut graph = Graph::<Cell>::new();
-    let edges: Vec<(Cell, Cell, f32)> = current_hex_graph
+    let mut graph = Graph::<HexCell>::new();
+    let edges: Vec<(HexCell, HexCell, f32)> = current_hex_graph
         .transitions
         .into_iter()
         .map(|((from, to), weight)| (from, to, weight))
@@ -242,9 +244,9 @@ impl Graph<H3Cell> {
                         };
                         let start_coords = h3o::LatLng::from(start.id.cell);
                         let start_plot = (
-                            start_coords.lat() as f32,
-                            start_layer,
                             start_coords.lng() as f32,
+                            start_layer,
+                            -start_coords.lat() as f32,
                         );
                         let end_layer = if end.id.layer >= 0 {
                             0.0
@@ -253,7 +255,7 @@ impl Graph<H3Cell> {
                         };
                         let end_coords = h3o::LatLng::from(end.id.cell);
                         let end_plot =
-                            (end_coords.lat() as f32, end_layer, end_coords.lng() as f32);
+                            (end_coords.lng() as f32, end_layer, -end_coords.lat() as f32);
                         Ok((start_plot, end_plot))
                     } else {
                         Err(anyhow::anyhow!("node not found"))
@@ -278,11 +280,18 @@ pub struct PyH3Graph {
 #[pymethods]
 impl PyH3Graph {
     #[new]
-    pub fn new(bike_penalty: f64, k_ring: u32) -> Self {
+    pub fn new(bike_penalty: f64, k_ring: u32, layers: String) -> Self {
+        let (gtfs_layer, osm_layer) = match layers.as_str() {
+            "walk+bike" => (false, None),
+            "walk" => (false, Some(OSMLayer::Walking)),
+            "walk+transit" => (true, Some(OSMLayer::Walking)),
+            _ => (true, None),
+        };
         Self {
             graph: Graph::<H3Cell>::new(),
             options: OSMOptions {
-                layer: None,
+                osm_layer,
+                gtfs_layer,
                 bike_penalty,
             },
             k_ring,
@@ -298,28 +307,31 @@ impl PyH3Graph {
             osm_graph.nr_nodes(),
             start.elapsed().as_secs()
         );
-
-        let start = Instant::now();
-        let mut gtfs_graph = h3_network_from_gtfs(gtfs_path).unwrap();
-        println!(
-            "gtfs graph created with {} nodes in {} s",
-            gtfs_graph.nr_nodes(),
-            start.elapsed().as_secs()
-        );
-
-        let start = Instant::now();
-        if osm_graph.merge(&mut gtfs_graph).is_ok() {
-            self.graph = osm_graph;
+        if self.options.gtfs_layer {
+            let start = Instant::now();
+            let mut gtfs_graph = h3_network_from_gtfs(gtfs_path).unwrap();
             println!(
-                "merged graph created with {} nodes in {} s",
-                self.graph.nr_nodes(),
+                "gtfs graph created with {} nodes in {} s",
+                gtfs_graph.nr_nodes(),
                 start.elapsed().as_secs()
             );
+
+            let start = Instant::now();
+            if osm_graph.merge(&mut gtfs_graph).is_ok() {
+                self.graph = osm_graph;
+                println!(
+                    "merged graph created with {} nodes in {} s",
+                    self.graph.nr_nodes(),
+                    start.elapsed().as_secs()
+                );
+            } else {
+                println!("failed to merge graphs");
+                return Err(PyErr::new::<pyo3::exceptions::PyException, _>(
+                    "failed to merge graphs",
+                ));
+            }
         } else {
-            println!("failed to merge graphs");
-            return Err(PyErr::new::<pyo3::exceptions::PyException, _>(
-                "failed to merge graphs",
-            ));
+            self.graph = osm_graph;
         }
 
         println!("hash: {}", self.graph.node_hash());
@@ -367,7 +379,7 @@ impl PyH3Graph {
 
         let astar_res = self
             .graph
-            .astar(origin, Some(destination), None, None, h);
+            .astar(origin, Some(destination), None, None, None, None, h);
 
         if let Ok(astar_res) = astar_res {
             if let (Some(path), Some(distance)) = (astar_res.path, astar_res.distances.first()) {
@@ -394,6 +406,8 @@ impl PyH3Graph {
         origins: Vec<u64>,
         destinations: Vec<u64>,
         hour_of_week: Option<usize>,
+        infinity: Option<f64>,
+        dynamic_infinity: Option<bool>
     ) -> PyResult<HashMap<u64, Vec<Option<f64>>>> {
         fn h(start_cell: &H3Cell, end_cell: &H3Cell) -> f64 {
             start_cell
@@ -418,6 +432,8 @@ impl PyH3Graph {
             ),
             false,
             hour_of_week,
+            infinity,
+            dynamic_infinity,
             h,
         );
 
@@ -479,14 +495,14 @@ fn u64list_to_h3cells(
 #[cfg(feature = "pyo3")]
 impl Default for PyH3Graph {
     fn default() -> Self {
-        Self::new(1.0, 2)
+        Self::new(1.0, 2, "all".to_string())
     }
 }
 
 #[cfg(feature = "pyo3")]
 #[pyclass]
 pub struct PyCellGraph {
-    graph: Graph<Cell>,
+    graph: Graph<HexCell>,
 }
 
 #[cfg(feature = "pyo3")]
@@ -495,7 +511,7 @@ impl PyCellGraph {
     #[new]
     pub fn new() -> Self {
         Self {
-            graph: Graph::<Cell>::new(),
+            graph: Graph::<HexCell>::new(),
         }
     }
 
@@ -517,7 +533,7 @@ impl PyCellGraph {
         origins: Vec<u64>,
         destinations: Vec<u64>,
     ) -> PyResult<HashMap<u64, Vec<Option<f64>>>> {
-        fn heuristic(start_cell: &Cell, end_cell: &Cell) -> f64 {
+        fn heuristic(start_cell: &HexCell, end_cell: &HexCell) -> f64 {
             let dx = (start_cell.a - end_cell.a).abs();
             let dy = (start_cell.b - end_cell.b).abs();
             let dz = (start_cell.a + start_cell.b - end_cell.a - end_cell.b).abs();
@@ -530,7 +546,7 @@ impl PyCellGraph {
         let adjusted_origins = origins
             .iter()
             .filter_map(|o| {
-                let cell = Cell::from_id(*o);
+                let cell = HexCell::from_id(*o);
                 if node_map_access.contains_left(&cell) {
                     Some(cell)
                 } else {
@@ -541,12 +557,12 @@ impl PyCellGraph {
             })
             .collect::<Vec<_>>();
 
-        let origin_mapping = adjusted_origins.iter().zip(origins.iter()).collect::<HashMap<&Cell, &u64>>();
+        let origin_mapping = adjusted_origins.iter().zip(origins.iter()).collect::<HashMap<&HexCell, &u64>>();
 
         let destinations = destinations
             .iter()
             .filter_map(|d| {
-                let cell = Cell::from_id(*d);
+                let cell = HexCell::from_id(*d);
                 if node_map_access.contains_left(&cell) {
                     Some(cell)
                 } else {
@@ -559,7 +575,7 @@ impl PyCellGraph {
 
         let distances =
             self.graph
-                .matrix_astar_distance(&adjusted_origins, Some(&destinations), true, None, heuristic);
+                .matrix_astar_distance(&adjusted_origins, Some(&destinations), true, None, None, None, heuristic);
 
         Ok(distances
             .into_par_iter()

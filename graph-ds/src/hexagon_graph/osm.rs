@@ -54,7 +54,7 @@ pub fn process_osm_pbf(
             |element| {
                 match element {
                     Element::Way(way) => {
-                        let layers = if let Some(layer) = options.layer {
+                        let layers = if let Some(layer) = options.osm_layer {
                             vec![layer]
                         } else {
                             vec![OSMLayer::Cycling, OSMLayer::Walking]
