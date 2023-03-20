@@ -39,6 +39,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install --no-install-recommends ${{ matrix.packages }}
       - name: Install maturin
         run: pip install maturin
+      - name: remove old wheels
+        run: rm -rf wheels/*.whl
       - name: Build wheels
         run: |
           maturin build --manifest-path graph-ds/Cargo.toml --target ${{ matrix.target }} --release --strip --out wheels

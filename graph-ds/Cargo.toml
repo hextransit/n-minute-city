@@ -20,6 +20,8 @@ itertools = "0.10.5"
 
 serde = { version = "1.0.147", features = ["derive"] }
 rmp-serde = "1.1.1"
+brotli = "3.3.4"
+
 
 nohash = "0.2.0"
 
