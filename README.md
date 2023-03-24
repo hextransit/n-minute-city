@@ -41,7 +41,7 @@ There are no direct connections from the bike layer to the transit layers.
 create a new graph object:
 ```python
 graph = PyH3Graph(bike_penalty=0.5, k_ring=2, layer="all")
-graph.create(osm_path="<path>", gtfs_path="<path>")
+graph.create(osm_path="<path>", gtfs_paths=["<path>"])
 ```
 
 **PyH3Graph** exposes two functions for pathfinding:

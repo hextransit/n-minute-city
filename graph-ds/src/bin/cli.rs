@@ -1,10 +1,17 @@
 use graph_ds::hexagon_graph::{h3_network_from_gtfs, h3_network_from_osm, OSMOptions};
-use plotters::{prelude::*, style::full_palette::{ORANGE, LIGHTBLUE}};
+use plotters::{
+    prelude::*,
+    style::full_palette::{LIGHTBLUE, ORANGE},
+};
 use std::time::Instant;
 
 fn main() -> anyhow::Result<()> {
     let start = Instant::now();
-    let mut osm_graph = h3_network_from_osm("resources/denmark-processed.osm.pbf", &OSMOptions::default()).unwrap();
+    let mut osm_graph = h3_network_from_osm(
+        "resources/la-processed.osm.pbf",
+        &OSMOptions::default(),
+    )
+    .unwrap();
 
     // let mut cycle_graph = h3_network_from_osm(
     //     "resources/copenhagen-processed.osm.pbf",
@@ -18,7 +25,7 @@ fn main() -> anyhow::Result<()> {
     );
 
     let start = Instant::now();
-    let mut gtfs_graph = h3_network_from_gtfs("resources/rejseplanen.zip").unwrap();
+    let (mut gtfs_graph, _) = h3_network_from_gtfs("resources/gtfs_rail.zip", 0).unwrap();
     println!(
         "gtfs graph created with {} nodes in {} s",
         gtfs_graph.nr_nodes(),
@@ -73,7 +80,8 @@ fn plot_png(
     println!("y: {} .. {}", y_min, y_max);
     println!("z: {} .. {}", z_min, z_max);
 
-    let root = plotters::backend::BitMapBackend::new("test.png", (16000, 16000)).into_drawing_area();
+    let root =
+        plotters::backend::BitMapBackend::new("test.png", (16000, 16000)).into_drawing_area();
 
     let mut chart = ChartBuilder::on(&root)
         .margin(10)
