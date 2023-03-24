@@ -27,3 +27,4 @@ dependencies:
         - lets_plot
         - contextily
         - osmnx
+        - maturin

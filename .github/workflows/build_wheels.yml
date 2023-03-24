@@ -39,6 +39,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install --no-install-recommends ${{ matrix.packages }}
       - name: Install maturin
         run: pip install maturin
+      - name: remove old wheels
+        run: rm -rf wheels/*.whl
       - name: Build wheels
         run: |
           maturin build --manifest-path graph-ds/Cargo.toml --target ${{ matrix.target }} --release --strip --out wheels
@@ -58,6 +60,7 @@ jobs:
         with:
           repository: potatoTVnet/n-minute-city
           ref: main
+          lfs: true
           token: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/download-artifact@v3
         with:
@@ -65,7 +68,10 @@ jobs:
           path: wheels
       - name: make changes
         run: |
-          git add wheels/*.whl
+          /usr/bin/git add wheels/*.whl
+      - name: list changes
+        run: |
+          /usr/bin/git diff --name-only
       - name: commit changes
         uses: peter-evans/create-pull-request@v3
         id: cpr

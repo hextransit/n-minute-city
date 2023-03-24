@@ -40,9 +40,11 @@ There are no direct connections from the bike layer to the transit layers.
 
 create a new graph object:
 ```python
-graph = PyH3Graph()
+graph = PyH3Graph(bike_penalty=0.5, k_ring=2, layers="all")
 graph.create(osm_path="<path>", gtfs_path="<path>")
 ```
+The `layers` keyword argument allows to specify the layers the graph should contain after processing. The walk network is always included. Supported layer tags are: `all` (default), `walk`, `walk+bike`, `walk+transit`.
+
 
 **PyH3Graph** exposes two functions for pathfinding:
 * `matrix_distance` - returns the distance between all hexagon cells
@@ -52,11 +54,14 @@ H3 cells need to be input in their u64 integer representation. Only cells on the
 
 ```python
 # get the distance matrix
-distances = graph.matrix_distance(origins=[u64], destinations=[u64], hour_of_week=int)
+distances = graph.matrix_distance(origins=[u64], destinations=[u64], hour_of_week=int, infinity=Optional[float], dynamic_infinity=bool)
+
 path = graph.astar_path(start=u64, end=u64)
 ```
 
 The optional `hour_of_week` parameter allows the transit layers to model expected wait time based on the time of day. The input expects an integer representing the hour of the week, starting at 0 for Monday 00:00 and ending at 167 for Sunday 23:00.
+
+The parameters `infinity` and `dynamic_infinity` are used to set the maximum distance between two cells. If `dynamic_infinity` is set to `True`, the pathfinding will lower the ininity value during calculation. This is only useful when searching for minimum distances.
 
 If a given index is not present in the graph, the pathfinding will attempt to map it to an index nearby, with a maximum permitted distance of 2 cells. If no nearby index is found, an empty list will be returned for that origin.
 

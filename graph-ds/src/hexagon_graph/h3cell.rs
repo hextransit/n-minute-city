@@ -5,7 +5,7 @@ use std::{
 
 use h3o::{CellIndex, LatLng, Resolution};
 
-use super::cell::Cell;
+use super::cell::HexCell;
 
 /// A H3 cell
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -48,14 +48,14 @@ impl H3Cell {
     }
 
     /// converts the H3 cell to a normal hexagon cell. The default origin is (0, 0)
-    pub fn to_cell(&self, origin: Option<CellIndex>) -> anyhow::Result<Cell> {
+    pub fn to_cell(&self, origin: Option<CellIndex>) -> anyhow::Result<HexCell> {
         let origin = match origin {
             Some(origin) => origin,
             None => LatLng::new(0.0, 0.0)?.to_cell(self.cell.resolution()),
         };
         let local_ij = self.cell.to_local_ij(origin)?;
 
-        Ok(Cell {
+        Ok(HexCell {
             a: local_ij.i() as i16,
             b: local_ij.j() as i16,
             radius: 1,

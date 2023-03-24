@@ -23,26 +23,26 @@ pub enum Direction {
 ///  * layer: for multi-layer grids, think of it as levels on buildings (implementation is not yet complete)
 ///
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct Cell {
+pub struct HexCell {
     pub a: i16,
     pub b: i16,
     pub radius: i16,
     pub layer: i16,
 }
 
-impl PartialOrd for Cell {
+impl PartialOrd for HexCell {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.id().cmp(&other.id()))
     }
 }
 
-impl Ord for Cell {
+impl Ord for HexCell {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.id().cmp(&other.id())
     }
 }
 
-impl Cell {
+impl HexCell {
     // byte representation [l l r r b b a a]
     pub fn id(&self) -> u64 {
         self.a
@@ -64,7 +64,7 @@ impl Cell {
         self
     }
 
-    pub fn from_id(id: u64) -> Cell {
+    pub fn from_id(id: u64) -> HexCell {
         let layer = id.to_le_bytes()[0..2]
             .iter()
             .fold(0, |acc, &x| (acc << 8) | x as i16);
@@ -77,7 +77,7 @@ impl Cell {
         let a = id.to_le_bytes()[6..]
             .iter()
             .fold(0, |acc, &x| (acc << 8) | x as i16);
-        Cell {
+        HexCell {
             a,
             b,
             radius,
@@ -85,7 +85,7 @@ impl Cell {
         }
     }
 
-    pub fn from_carthesian(x: f32, y: f32, r: f32) -> Cell {
+    pub fn from_carthesian(x: f32, y: f32, r: f32) -> HexCell {
         let (a, b) = (
             (2.0 / 3.0) * x / r,
             (-x / 3.0 + (3.0_f32.sqrt() / 3.0) * y) / r,
@@ -100,7 +100,7 @@ impl Cell {
             (a_round as i32, (b_round + f32::round(b + 0.5 * a)) as i32)
         };
 
-        Cell {
+        HexCell {
             a: center.0 as i16,
             b: center.1 as i16,
             radius: r.round() as i16,
@@ -131,7 +131,7 @@ impl Cell {
         vertices
     }
 
-    pub fn is_neighbor(&self, other: &Cell) -> bool {
+    pub fn is_neighbor(&self, other: &HexCell) -> bool {
         if self.radius != other.radius {
             false
         } else {
@@ -150,7 +150,7 @@ impl Cell {
         }
     }
 
-    pub fn get_all_neighbors(&self) -> Vec<Cell> {
+    pub fn get_all_neighbors(&self) -> Vec<HexCell> {
         [
             Direction::N,
             Direction::NE,
@@ -166,51 +166,51 @@ impl Cell {
         .collect()
     }
 
-    pub fn get_neighbor(&self, direction: Direction) -> Cell {
+    pub fn get_neighbor(&self, direction: Direction) -> HexCell {
         match direction {
-            Direction::N => Cell {
+            Direction::N => HexCell {
                 a: self.a,
                 b: self.b + 1,
                 radius: self.radius,
                 layer: self.layer,
             },
-            Direction::NE => Cell {
+            Direction::NE => HexCell {
                 a: self.a + 1,
                 b: self.b,
                 radius: self.radius,
                 layer: self.layer,
             },
-            Direction::SE => Cell {
+            Direction::SE => HexCell {
                 a: self.a + 1,
                 b: self.b - 1,
                 radius: self.radius,
                 layer: self.layer,
             },
-            Direction::S => Cell {
+            Direction::S => HexCell {
                 a: self.a,
                 b: self.b - 1,
                 radius: self.radius,
                 layer: self.layer,
             },
-            Direction::SW => Cell {
+            Direction::SW => HexCell {
                 a: self.a - 1,
                 b: self.b,
                 radius: self.radius,
                 layer: self.layer,
             },
-            Direction::NW => Cell {
+            Direction::NW => HexCell {
                 a: self.a - 1,
                 b: self.b + 1,
                 radius: self.radius,
                 layer: self.layer,
             },
-            Direction::UP => Cell {
+            Direction::UP => HexCell {
                 a: self.a,
                 b: self.b,
                 radius: self.radius,
                 layer: self.layer + 1,
             },
-            Direction::DOWN => Cell {
+            Direction::DOWN => HexCell {
                 a: self.a,
                 b: self.b,
                 radius: self.radius,
