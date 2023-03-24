@@ -19,6 +19,8 @@ import pyproj
 from rasterio.warp import calculate_default_transform, reproject, Resampling
 from shapely.geometry import Point
 import contextily as cx
+import osmnx as ox
+from pois_to_h3 import all_shapley_geo_to_h3
 
 
 
@@ -143,6 +145,29 @@ def tif_to_h3(reprojected_file, transformation, h3_csv, H3_RES):
     df.to_csv(h3_csv, index=False)
 
 
+def city_boundaries_to_h3(city_names):
+    '''
+    city_names: list of city names
+
+    output: list of h3 indices for city boundaries and the bounding box of the city
+            bbox pois is a slightly larger bounding box for getting pois
+    '''
+    # get city bounding box
+    city_geo = ox.geocode_to_gdf(city_names)  #Look into getting this directly from file
+    # make bounding box bigger
+    minx, miny, maxx, maxy = city_geo.total_bounds
+    bbox = [minx, miny, maxx, maxy]
+
+    # increase bounding box by 0.03 degrees in all directions (around 3 km)
+    bbox_pois = [minx-0.03, miny-0.03, maxx+0.03, maxy+0.03]
+
+    city_poly = city_geo.geometry.values
+    # convert to h3
+    city_bounds_h3 = [all_shapley_geo_to_h3(p, 12) for p in city_poly]
+    # flatten h3 list
+    city_bounds_h3 = [item for sublist in city_bounds_h3 for item in sublist]
+
+    return city_bounds_h3, bbox, bbox_pois
 
 '''
 label meanings:
