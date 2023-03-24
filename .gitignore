@@ -5,3 +5,6 @@
 *.png
 .DS_Store
 python/*.pyc
+python/__pycache__
+python/.ipynb_checkpoints
+python/cache
