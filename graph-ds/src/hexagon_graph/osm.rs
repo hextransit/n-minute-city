@@ -62,9 +62,7 @@ pub fn process_osm_pbf(
                         layers
                             .into_iter()
                             .flat_map(|layer| {
-                                if way
-                                    .tags()
-                                    .any(|(k, _)| layer.get_required_tags().contains(&k))
+                                if     way.tags().any(|(k, _)| layer.get_required_tags().contains(&k))
                                     && way.tags().any(|(k, _)| k == "highway")
                                     && way.tags().all(|(k, v)| tag_value_matches(k, v, &layer))
                                 {

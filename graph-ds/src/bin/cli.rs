@@ -25,7 +25,9 @@ fn main() -> anyhow::Result<()> {
     );
 
     let start = Instant::now();
-    let (mut gtfs_graph, _) = h3_network_from_gtfs("resources/gtfs_rail.zip", 0).unwrap();
+    let (mut gtfs_graph, offset) = h3_network_from_gtfs("resources/gtfs_rail.zip", 0).unwrap();
+    let (mut gtfs_graph_2, _) = h3_network_from_gtfs("resources/gtfs_bus.zip", offset).unwrap();
+
     println!(
         "gtfs graph created with {} nodes in {} s",
         gtfs_graph.nr_nodes(),
@@ -35,6 +37,7 @@ fn main() -> anyhow::Result<()> {
     let start = Instant::now();
     // osm_graph.merge(&mut cycle_graph)?;
     osm_graph.merge(&mut gtfs_graph)?;
+    osm_graph.merge(&mut gtfs_graph_2)?;
 
     println!(
         "merged graph created with {} nodes in {} s",
