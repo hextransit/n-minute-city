@@ -41,7 +41,7 @@ There are no direct connections from the bike layer to the transit layers.
 create a new graph object:
 ```python
 graph = PyH3Graph(bike_penalty=0.5, k_ring=2, layers="all")
-graph.create(osm_path="<path>", gtfs_path="<path>")
+graph.create(osm_path="<path>", gtfs_paths=["<path>"])
 ```
 The `layers` keyword argument allows to specify the layers the graph should contain after processing. The walk network is always included. Supported layer tags are: `all` (default), `walk`, `walk+bike`, `walk+transit`.
 

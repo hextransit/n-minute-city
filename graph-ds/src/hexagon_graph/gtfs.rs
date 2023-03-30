@@ -8,6 +8,7 @@ use itertools::Itertools;
 #[allow(clippy::type_complexity)]
 pub struct GtfsProcessingResult {
     pub edge_data: Vec<((usize, CellIndex, CellIndex), f64)>,
+    pub nr_routes: usize,
     pub stop_frequencies: HashMap<(CellIndex, usize), Vec<f64>>,
 }
 
@@ -152,13 +153,21 @@ pub fn calculate_edge_data(
 /// process the GTFS feed and return both the edge data and the stop frequencies
 pub fn process_gtfs(
     url: &str,
+    route_index_offset: usize,
     h3_resolution: h3o::Resolution,
 ) -> anyhow::Result<GtfsProcessingResult> {
     println!("getting GTFS feed from {url}");
 
-    let feed = gtfs_structures::GtfsReader::default()
+    let feed = if let Ok(feed_fast) = gtfs_structures::GtfsReader::default()
         .trim_fields(false)
-        .read(url)?;
+        .read(url)
+    {
+        feed_fast
+    } else {
+        gtfs_structures::GtfsReader::default()
+            .trim_fields(true)
+            .read(url)?
+    };
 
     let route_data: HashMap<String, usize> = feed
         .routes
@@ -167,13 +176,14 @@ pub fn process_gtfs(
         .keys()
         .enumerate()
         .par_bridge()
-        .map(|(index, route)| (route.to_string(), index))
+        .map(|(index, route)| (route.to_string(), index + route_index_offset))
         .collect();
 
     println!("routes: {}", route_data.len());
 
     Ok(GtfsProcessingResult {
         edge_data: calculate_edge_data(&feed.trips, route_data.clone(), h3_resolution)?,
+        nr_routes: route_data.len(),
         stop_frequencies: calcualte_stop_frequencies(
             &feed.trips,
             &feed.calendar,

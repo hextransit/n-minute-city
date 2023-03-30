@@ -72,7 +72,7 @@ pub fn cell_graph_from_mpk(path: &str) -> anyhow::Result<Graph<HexCell>> {
         transitions: BTreeMap<(HexCell, HexCell), f32>,
         pre_calculated_distances: HashMap<String, Vec<f32>>,
     }
-    let file = std::fs::File::open(&path)?;
+    let file = std::fs::File::open(path)?;
     let brotli_reader = brotli::Decompressor::new(file, 4096);
     let current_hex_graph: MpkStruct = rmp_serde::from_read(brotli_reader)?;
 
@@ -156,8 +156,12 @@ pub fn h3_network_from_osm(osm_url: &str, options: &OSMOptions) -> anyhow::Resul
     Ok(graph)
 }
 
-pub fn h3_network_from_gtfs(gtfs_url: &str) -> anyhow::Result<Graph<H3Cell>> {
-    let gtfs_res = gtfs::process_gtfs(gtfs_url, h3o::Resolution::Twelve)?;
+pub fn h3_network_from_gtfs(
+    gtfs_url: &str,
+    route_index_offset: usize,
+) -> anyhow::Result<(Graph<H3Cell>, usize)> {
+    let gtfs_res = gtfs::process_gtfs(gtfs_url, route_index_offset, h3o::Resolution::Twelve)?;
+    let nr_routes = gtfs_res.nr_routes;
     let weight_lists = gtfs_res.stop_frequencies;
     let mut graph = Graph::<H3Cell>::new();
     for ((layer, from, to), weight) in gtfs_res.edge_data {
@@ -203,7 +207,7 @@ pub fn h3_network_from_gtfs(gtfs_url: &str) -> anyhow::Result<Graph<H3Cell>> {
         // the connection from the transit edge to the base layer
         graph.build_and_add_egde(from_cell, base_cell, Some(1.0), None, None)?;
     }
-    Ok(graph)
+    Ok((graph, nr_routes))
 }
 
 /// each node is a H3 hexagon cell
@@ -298,38 +302,46 @@ impl PyH3Graph {
         }
     }
 
-    pub fn create(&mut self, osm_path: &str, gtfs_path: &str) -> PyResult<()> {
+    pub fn create(&mut self, osm_path: &str, gtfs_paths: Vec<String>) -> PyResult<()> {
         let start = Instant::now();
         let mut osm_graph = h3_network_from_osm(osm_path, &self.options).unwrap();
 
         println!(
-            "osm graph created with ({}) nodes (walk + bike) in {} s",
+            "osm graph created with {} nodes in {} s",
             osm_graph.nr_nodes(),
-            start.elapsed().as_secs()
+            start.elapsed().as_secs_f32()
         );
-        if self.options.gtfs_layer {
-            let start = Instant::now();
-            let mut gtfs_graph = h3_network_from_gtfs(gtfs_path).unwrap();
-            println!(
-                "gtfs graph created with {} nodes in {} s",
-                gtfs_graph.nr_nodes(),
-                start.elapsed().as_secs()
-            );
 
-            let start = Instant::now();
-            if osm_graph.merge(&mut gtfs_graph).is_ok() {
-                self.graph = osm_graph;
+        if self.options.gtfs_layer {
+            let mut offset: usize = 0;
+            for gtfs_path in gtfs_paths {
+                let start = Instant::now();
+
+                let (mut gtfs_graph, next_offset) =
+                    h3_network_from_gtfs(gtfs_path.as_str(), offset).unwrap();
+                offset += next_offset + 1;
+
                 println!(
-                    "merged graph created with {} nodes in {} s",
-                    self.graph.nr_nodes(),
-                    start.elapsed().as_secs()
+                    "gtfs graph created with {} nodes in {} s",
+                    gtfs_graph.nr_nodes(),
+                    start.elapsed().as_secs_f32(),
                 );
-            } else {
-                println!("failed to merge graphs");
-                return Err(PyErr::new::<pyo3::exceptions::PyException, _>(
-                    "failed to merge graphs",
-                ));
+
+                let start = Instant::now();
+                if osm_graph.merge(&mut gtfs_graph).is_ok() {
+                    println!(
+                        "merged gtfs graph into osm graph, now has {} nodes, took {} ms",
+                        osm_graph.nr_nodes(),
+                        start.elapsed().as_millis()
+                    );
+                } else {
+                    println!("failed to merge graphs");
+                    return Err(PyErr::new::<pyo3::exceptions::PyException, _>(
+                        "failed to merge graphs",
+                    ));
+                }
             }
+            self.graph = osm_graph;
         } else {
             self.graph = osm_graph;
         }
@@ -407,7 +419,7 @@ impl PyH3Graph {
         destinations: Vec<u64>,
         hour_of_week: Option<usize>,
         infinity: Option<f64>,
-        dynamic_infinity: Option<bool>
+        dynamic_infinity: Option<bool>,
     ) -> PyResult<HashMap<u64, Vec<Option<f64>>>> {
         fn h(start_cell: &H3Cell, end_cell: &H3Cell) -> f64 {
             start_cell
@@ -557,7 +569,10 @@ impl PyCellGraph {
             })
             .collect::<Vec<_>>();
 
-        let origin_mapping = adjusted_origins.iter().zip(origins.iter()).collect::<HashMap<&HexCell, &u64>>();
+        let origin_mapping = adjusted_origins
+            .iter()
+            .zip(origins.iter())
+            .collect::<HashMap<&HexCell, &u64>>();
 
         let destinations = destinations
             .iter()
@@ -573,9 +588,15 @@ impl PyCellGraph {
             })
             .collect::<Vec<_>>();
 
-        let distances =
-            self.graph
-                .matrix_astar_distance(&adjusted_origins, Some(&destinations), true, None, None, None, heuristic);
+        let distances = self.graph.matrix_astar_distance(
+            &adjusted_origins,
+            Some(&destinations),
+            true,
+            None,
+            None,
+            None,
+            heuristic,
+        );
 
         Ok(distances
             .into_par_iter()
