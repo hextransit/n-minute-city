@@ -173,14 +173,15 @@ def city_boundaries_to_h3(city_names):
 def get_origins(H3_RES, city_names, bbox, tif_path, city_bounds_h3):
 
     # filenames
-    cropped_tif_file = f'../resources/origins/{str(city_names)}_subset.tif'
-    reprojected_file = f'../resources/origins/{str(city_names)}_reprojected.tif'
-    h3_csv = f'../resources/origins/{str(city_names)}_ghsl_h3_codes.csv'
-    final_origins = f'../resources/origins/{str(city_names)}_origins_clean.csv'
+    file_name = "_".join(city_names)
+    cropped_tif_file = f'../resources/origins/{file_name}_subset.tif'
+    reprojected_file = f'../resources/origins/{file_name}_reprojected.tif'
+    h3_csv = f'../resources/origins/{file_name}_ghsl_h3_codes.csv'
+    final_origins = f'../resources/origins/{file_name}_origins_clean.csv'
 
     # check if files already exist
     if os.path.exists(final_origins):
-        print(f"file already exists for {str(city_names)}")
+        print(f"file already exists for {file_name}")
         return pd.read_csv(final_origins)
 
     # CROP
