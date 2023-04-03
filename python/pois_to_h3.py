@@ -8,6 +8,7 @@ import geopandas as gpd
 from shapely.geometry import MultiPolygon
 from shapely.geometry import Polygon
 import contextily as cx
+import os.path
 
 
 def flatten(lst):
@@ -142,7 +143,16 @@ def df_manipulations(pois, H3_RES, osm_filter, category_set, osm_tag_mapping):
     
     return h3_df[['h3_index','category']]
 
-def get_pois_h3(pbf_path, osm_filter, H3_RES, category_set, osm_tag_mapping):
+def get_pois_h3(pbf_path, osm_filter, H3_RES, category_set, osm_tag_mapping, municipality):
+
+    file_name = "_".join(municipality)
+    final_destinations = f'../resources/destinations/{file_name}_destinations_clean.csv'
+    if os.path.exists(final_destinations):
+        print(f"file already exists for {file_name}")
+        return pd.read_csv(final_destinations)
     osm = OSM(pbf_path)
     pois = osm.get_pois(custom_filter=osm_filter)
-    return df_manipulations(pois, H3_RES, osm_filter, category_set, osm_tag_mapping)
+    df = df_manipulations(pois, H3_RES, osm_filter, category_set, osm_tag_mapping)
+    df.to_csv(final_destinations, index=False)
+
+    return df

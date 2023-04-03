@@ -21,6 +21,7 @@ from shapely.geometry import Point
 import contextily as cx
 import osmnx as ox
 from pois_to_h3 import all_shapley_geo_to_h3
+import os.path
 
 
 
@@ -168,6 +169,45 @@ def city_boundaries_to_h3(city_names):
     city_bounds_h3 = [item for sublist in city_bounds_h3 for item in sublist]
 
     return city_bounds_h3, bbox, bbox_pois
+
+def get_origins(H3_RES, city_names, bbox, tif_path, city_bounds_h3):
+
+    # filenames
+    file_name = "_".join(city_names)
+    cropped_tif_file = f'../resources/origins/{file_name}_subset.tif'
+    reprojected_file = f'../resources/origins/{file_name}_reprojected.tif'
+    h3_csv = f'../resources/origins/{file_name}_ghsl_h3_codes.csv'
+    final_origins = f'../resources/origins/{file_name}_origins_clean.csv'
+
+    # check if files already exist
+    if os.path.exists(final_origins):
+        print(f"file already exists for {file_name}")
+        return pd.read_csv(final_origins)
+
+    # CROP
+    # cropping crs from latlon --> tif crs
+    src_crs = 'EPSG:4326'
+    dst_crs = 'ESRI:54009'
+    crop_tif_image(tif_path, cropped_tif_file, bbox, src_crs, dst_crs)
+
+    # Reproj
+    # reprojection goes from tif crs --> latlon 
+    src_crs = 'ESRI:54009'
+    dst_crs = 'EPSG:4326'
+    transformation = reproject_tif(cropped_tif_file, dst_crs, reprojected_file)
+
+    H3_RES = 12
+    tif_to_h3(reprojected_file, transformation, h3_csv, H3_RES)
+
+    # subset the ghsl h3 codes to only include those that are within the city bounds
+    origins = pd.read_csv(h3_csv)
+    overlap = set(origins['h3_index']).intersection(set(city_bounds_h3))
+    # only keep dataframe rows that have h3 index in overlap
+    origins = origins[origins['h3_index'].isin(overlap)]
+    origins.to_csv(final_origins, index=False)
+
+
+    return origins
 
 '''
 label meanings:
