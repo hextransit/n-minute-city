@@ -187,17 +187,30 @@ impl<T: Eq + Hash + Copy + Send + Sync + Ord + std::fmt::Debug> Graph<T> {
         };
         // create the edge
         // add the edge to the graph
-        edges
-            .entry(start_node_index)
-            .or_default()
-            .insert(crate::Edge {
-                from: start_node_index,
-                to: end_node_index,
-                weight,
-                weight_list,
-                capacity,
-            });
+        let new_edge = crate::Edge {
+            from: start_node_index,
+            to: end_node_index,
+            weight,
+            weight_list,
+            capacity,
+        };
 
+        if let Some(existing_edge) = edges
+                    .entry(start_node_index)
+                    .or_default()
+                    .get(&new_edge) {
+            if existing_edge.weight.unwrap_or(60.0) > new_edge.weight.unwrap_or(60.0) {
+                edges
+                    .entry(start_node_index)
+                    .or_default()
+                    .insert(new_edge);
+            }
+        } else {
+            edges
+                .entry(start_node_index)
+                .or_default()
+                .insert(new_edge);
+        }
         Ok(())
     }
 
