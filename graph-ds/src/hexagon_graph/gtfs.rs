@@ -15,7 +15,7 @@ pub struct GtfsProcessingResult {
 /// calculates the frequencies at each stop for every route
 ///
 /// frequencies are stored per hour of the week, the frequency number is the number of departures per hour
-pub fn calcualte_stop_frequencies(
+pub fn calculate_stop_frequencies(
     trips: &HashMap<String, gtfs_structures::Trip>,
     calendar: &HashMap<String, gtfs_structures::Calendar>,
     route_layer_map: HashMap<String, usize>,
@@ -143,7 +143,6 @@ pub fn calculate_edge_data(
                     }
                 })
                 .collect::<HashMap<_, _>>();
-
             edges
         })
         .collect::<Vec<_>>();
@@ -184,7 +183,7 @@ pub fn process_gtfs(
     Ok(GtfsProcessingResult {
         edge_data: calculate_edge_data(&feed.trips, route_data.clone(), h3_resolution)?,
         nr_routes: route_data.len(),
-        stop_frequencies: calcualte_stop_frequencies(
+        stop_frequencies: calculate_stop_frequencies(
             &feed.trips,
             &feed.calendar,
             route_data,

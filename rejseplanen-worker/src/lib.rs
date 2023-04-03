@@ -30,7 +30,9 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
     // Environment bindings like KV Stores, Durable Objects, Secrets, and Variables.
     router
         .post_async("/", |mut req, _| async move {
-            let form = req.form_data().await?;
+            let Ok(form) = req.form_data().await else {
+                return Response::error("missing form data", 400)
+            };
             let origin = if let Some(FormEntry::Field(value)) = form.get("origin") {
                 h3o::CellIndex::try_from(value.as_str().parse::<u64>().unwrap_or_default())
             } else {

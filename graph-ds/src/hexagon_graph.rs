@@ -182,9 +182,8 @@ pub fn h3_network_from_gtfs(
             if weight_list.len() != 24 * 7 {
                 graph.build_and_add_egde(base_cell, from_cell, Some(5.0), None, None)?;
             } else {
-                let list_average = 60.0
-                    / (weight_list.iter().filter(|x| !x.is_infinite()).sum::<f64>()
-                        / weight_list.len() as f64)
+                let list_min = 60.0
+                    / weight_list.iter().fold(1.0, |a, b| { f64::max(a, *b)})
                     / 2.0;
                 let weight_list = weight_list
                     .iter()
@@ -193,7 +192,7 @@ pub fn h3_network_from_gtfs(
                 graph.build_and_add_egde(
                     base_cell,
                     from_cell,
-                    Some(list_average),
+                    Some(list_min),
                     Some(weight_list),
                     None,
                 )?;
@@ -351,7 +350,71 @@ impl PyH3Graph {
         Ok(())
     }
 
-    pub fn astar_path(&self, origin: u64, destination: u64) -> PyResult<(Vec<u64>, f64)> {
+    pub fn get_random_node(&self) -> PyResult<u64> {
+        if let Some(cell) = self.graph.get_random_node() {
+            Ok(cell.cell.into())
+        } else {
+            Err(PyErr::new::<pyo3::exceptions::PyException, _>(
+                "no nodes in graph",
+            ))
+        }
+    }
+
+    pub fn dijkstra_path(&self, origin: u64, destination: u64, hour_of_week: Option<usize>) -> PyResult<(Vec<u64>, f64)> {
+        fn h(_start_cell: &H3Cell, _end_cell: &H3Cell) -> f64 {
+            1.0
+        }
+
+        let node_map_access = self.graph.node_map.as_ref().read().unwrap();
+        let node_mapping =
+            u64list_to_h3cells(&node_map_access, vec![origin, destination], self.k_ring);
+
+        node_mapping.iter().for_each(|(original, mapped)| {
+            if let Some(mapped) = mapped {
+                let mapped_u64 = u64::from(mapped.cell);
+                if original != &mapped_u64 {
+                    println!("nodes have been adjusted: {} -> {}", original, mapped_u64);
+                }
+            }
+        });
+
+        let (Some(Some(origin)), Some(Some(destination))) = (node_mapping.get_by_left(&origin), node_mapping.get_by_left(&destination)) else {
+            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                "origin or destination not found",
+            ));
+        };
+
+        println!(
+            "astar from {} to {}",
+            u64::from(origin.cell),
+            u64::from(destination.cell)
+        );
+
+        let astar_res = self
+            .graph
+            .astar(origin, Some(destination), None, None, None, hour_of_week, h);
+
+        if let Ok(astar_res) = astar_res {
+            if let (Some(path), Some(distance)) = (astar_res.path, astar_res.distances.first()) {
+                let u64_path = path
+                    .into_iter()
+                    .flat_map(|cell| cell.cell.try_into())
+                    .collect::<Vec<u64>>();
+
+                Ok((u64_path, distance.unwrap_or(-1.0)))
+            } else {
+                Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                    "no path found",
+                ))
+            }
+        } else {
+            Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                "no path found",
+            ))
+        }
+    }
+
+    pub fn astar_path(&self, origin: u64, destination: u64, hour_of_week: Option<usize>) -> PyResult<(Vec<u64>, f64)> {
         fn h(start_cell: &H3Cell, end_cell: &H3Cell) -> f64 {
             if let Ok(dist) = start_cell.cell.grid_distance(end_cell.cell) {
                 dist as f64
@@ -391,7 +454,7 @@ impl PyH3Graph {
 
         let astar_res = self
             .graph
-            .astar(origin, Some(destination), None, None, None, None, h);
+            .astar(origin, Some(destination), None, None, None, hour_of_week, h);
 
         if let Ok(astar_res) = astar_res {
             if let (Some(path), Some(distance)) = (astar_res.path, astar_res.distances.first()) {
@@ -421,11 +484,8 @@ impl PyH3Graph {
         infinity: Option<f64>,
         dynamic_infinity: Option<bool>,
     ) -> PyResult<HashMap<u64, Vec<Option<f64>>>> {
-        fn h(start_cell: &H3Cell, end_cell: &H3Cell) -> f64 {
-            start_cell
-                .cell
-                .grid_distance(end_cell.cell)
-                .unwrap_or(i32::MAX) as f64
+        fn h(_start_cell: &H3Cell, _end_cell: &H3Cell) -> f64 {
+            1.0
         }
 
         // map each origin and destination to an H3 cell that is present in the graph
@@ -449,11 +509,11 @@ impl PyH3Graph {
             h,
         );
 
-        println!(
-            "matrix distance computed for {} origins - got {} results",
-            origins.len(),
-            distances.len()
-        );
+        // println!(
+        //     "matrix distance computed for {} origins - got {} results",
+        //     origins.len(),
+        //     distances.len()
+        // );
 
         Ok(distances
             .into_par_iter()

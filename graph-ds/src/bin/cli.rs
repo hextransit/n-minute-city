@@ -7,26 +7,26 @@ use std::time::Instant;
 
 fn main() -> anyhow::Result<()> {
     let start = Instant::now();
-    let mut osm_graph = h3_network_from_osm(
-        "resources/la-processed.osm.pbf",
-        &OSMOptions::default(),
-    )
-    .unwrap();
+    // let mut osm_graph = h3_network_from_osm(
+    //     "resources/la-processed.osm.pbf",
+    //     &OSMOptions::default(),
+    // )
+    // .unwrap();
 
-    // let mut cycle_graph = h3_network_from_osm(
-    //     "resources/copenhagen-processed.osm.pbf",
-    //     OSMLayer::Cycling,
-    // ).unwrap();
+    // // let mut cycle_graph = h3_network_from_osm(
+    // //     "resources/copenhagen-processed.osm.pbf",
+    // //     OSMLayer::Cycling,
+    // // ).unwrap();
 
-    println!(
-        "osm graph created with {} nodes in {} s",
-        osm_graph.nr_nodes(),
-        start.elapsed().as_secs()
-    );
+    // println!(
+    //     "osm graph created with {} nodes in {} s",
+    //     osm_graph.nr_nodes(),
+    //     start.elapsed().as_secs()
+    // );
 
     let start = Instant::now();
-    let (mut gtfs_graph, offset) = h3_network_from_gtfs("resources/gtfs_rail.zip", 0).unwrap();
-    let (mut gtfs_graph_2, _) = h3_network_from_gtfs("resources/gtfs_bus.zip", offset).unwrap();
+    let (mut gtfs_graph, offset) = h3_network_from_gtfs("resources/rejseplanen.zip", 0).unwrap();
+    // let (mut gtfs_graph_2, _) = h3_network_from_gtfs("resources/gtfs_bus.zip", offset).unwrap();
 
     println!(
         "gtfs graph created with {} nodes in {} s",
@@ -34,18 +34,18 @@ fn main() -> anyhow::Result<()> {
         start.elapsed().as_secs()
     );
 
-    let start = Instant::now();
-    // osm_graph.merge(&mut cycle_graph)?;
-    osm_graph.merge(&mut gtfs_graph)?;
-    osm_graph.merge(&mut gtfs_graph_2)?;
+    // let start = Instant::now();
+    // // osm_graph.merge(&mut cycle_graph)?;
+    // osm_graph.merge(&mut gtfs_graph)?;
+    // osm_graph.merge(&mut gtfs_graph_2)?;
 
-    println!(
-        "merged graph created with {} nodes in {} s",
-        osm_graph.nr_nodes(),
-        start.elapsed().as_secs()
-    );
+    // println!(
+    //     "merged graph created with {} nodes in {} s",
+    //     osm_graph.nr_nodes(),
+    //     start.elapsed().as_secs()
+    // );
 
-    plot_png(osm_graph.get_plot_data().unwrap());
+    plot_png(gtfs_graph.get_plot_data().unwrap());
 
     Ok(())
 }
