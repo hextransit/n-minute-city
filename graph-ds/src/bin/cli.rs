@@ -7,25 +7,25 @@ use std::time::Instant;
 
 fn main() -> anyhow::Result<()> {
     let start = Instant::now();
-    // let mut osm_graph = h3_network_from_osm(
-    //     "resources/la-processed.osm.pbf",
-    //     &OSMOptions::default(),
-    // )
-    // .unwrap();
+    let mut osm_graph = h3_network_from_osm(
+        "resources/denver-processed.osm.pbf",
+        &OSMOptions::default(),
+    )
+    .unwrap();
 
     // // let mut cycle_graph = h3_network_from_osm(
     // //     "resources/copenhagen-processed.osm.pbf",
     // //     OSMLayer::Cycling,
     // // ).unwrap();
 
-    // println!(
-    //     "osm graph created with {} nodes in {} s",
-    //     osm_graph.nr_nodes(),
-    //     start.elapsed().as_secs()
-    // );
+    println!(
+        "osm graph created with {} nodes in {} s",
+        osm_graph.nr_nodes(),
+        start.elapsed().as_secs()
+    );
 
     let start = Instant::now();
-    let (mut gtfs_graph, offset) = h3_network_from_gtfs("resources/rejseplanen.zip", 0).unwrap();
+    let (mut gtfs_graph, offset) = h3_network_from_gtfs("resources/denver_gtfs.zip", 0).unwrap();
     // let (mut gtfs_graph_2, _) = h3_network_from_gtfs("resources/gtfs_bus.zip", offset).unwrap();
 
     println!(
@@ -34,18 +34,18 @@ fn main() -> anyhow::Result<()> {
         start.elapsed().as_secs()
     );
 
-    // let start = Instant::now();
-    // // osm_graph.merge(&mut cycle_graph)?;
-    // osm_graph.merge(&mut gtfs_graph)?;
+    let start = Instant::now();
+    // osm_graph.merge(&mut cycle_graph)?;
+    osm_graph.merge(&mut gtfs_graph)?;
     // osm_graph.merge(&mut gtfs_graph_2)?;
 
-    // println!(
-    //     "merged graph created with {} nodes in {} s",
-    //     osm_graph.nr_nodes(),
-    //     start.elapsed().as_secs()
-    // );
+    println!(
+        "merged graph created with {} nodes in {} s",
+        osm_graph.nr_nodes(),
+        start.elapsed().as_secs()
+    );
 
-    plot_png(gtfs_graph.get_plot_data().unwrap());
+    plot_png(osm_graph.get_plot_data().unwrap());
 
     Ok(())
 }
@@ -84,7 +84,7 @@ fn plot_png(
     println!("z: {} .. {}", z_min, z_max);
 
     let root =
-        plotters::backend::BitMapBackend::new("test.png", (16000, 16000)).into_drawing_area();
+        plotters::backend::BitMapBackend::new("test.png", (10000, 10000)).into_drawing_area();
 
     let mut chart = ChartBuilder::on(&root)
         .margin(10)
@@ -101,11 +101,13 @@ fn plot_png(
 
     chart.draw_series(plot_data.into_iter().map(|data| {
         match (data.0 .1 as i32, data.1 .1 as i32) {
-            (0, 0) => PathElement::new(vec![data.0, data.1], BLUE.mix(0.5)),
             (-1, -1) => PathElement::new(vec![data.0, data.1], ORANGE.mix(0.5)),
             (-2, -2) => PathElement::new(vec![data.0, data.1], RED.mix(0.5)),
-            (-1, 0) => PathElement::new(vec![data.0, data.1], LIGHTBLUE.mix(0.2)),
-            _ => PathElement::new(vec![data.0, data.1], YELLOW.mix(0.01)),
+            (-1, -2) => PathElement::new(vec![data.0, data.1], YELLOW.mix(0.01)),
+            (-2, -1) => PathElement::new(vec![data.0, data.1], YELLOW.mix(0.01)),
+            (-1, _) => PathElement::new(vec![data.0, data.1], LIGHTBLUE.mix(0.01)),
+            (_, -1) => PathElement::new(vec![data.0, data.1], LIGHTBLUE.mix(0.01)),
+            (_, _) => PathElement::new(vec![data.0, data.1], BLUE.mix(0.6)),
         }
     }))?;
 

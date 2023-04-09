@@ -241,7 +241,7 @@ impl Graph<H3Cell> {
                         (nodes.get(*key), nodes.get(edge.to))
                     {
                         let start_layer = if start.id.layer >= 0 {
-                            0.0
+                            start.id.layer as f32 / 256.0 
                         } else {
                             start.id.layer as f32
                         };
@@ -252,7 +252,7 @@ impl Graph<H3Cell> {
                             -start_coords.lat() as f32,
                         );
                         let end_layer = if end.id.layer >= 0 {
-                            0.0
+                            end.id.layer as f32 / 256.0
                         } else {
                             end.id.layer as f32
                         };
