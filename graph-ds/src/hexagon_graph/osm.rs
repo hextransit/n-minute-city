@@ -45,7 +45,9 @@ pub fn process_osm_pbf(
     h3_resolution: h3o::Resolution,
 ) -> anyhow::Result<Vec<((OSMLayer, CellIndex, CellIndex), f64)>> {
     let reader = ElementReader::from_path(url)?;
-    let cell_distance = h3_resolution.edge_length_m();
+    let edge_length = h3_resolution.edge_length_m();
+    let cell_distance = (edge_length.powi(2) - (edge_length / 2.0).powi(2)).sqrt() * 2.0;
+
 
     println!("processing osm pbf file: {url}");
 
