@@ -1,15 +1,22 @@
 use graph_ds::hexagon_graph::{h3_network_from_gtfs, h3_network_from_osm, OSMOptions};
-use plotters::{prelude::*, style::full_palette::{ORANGE, LIGHTBLUE}};
+use plotters::{
+    prelude::*,
+    style::full_palette::{LIGHTBLUE, ORANGE},
+};
 use std::time::Instant;
 
 fn main() -> anyhow::Result<()> {
     let start = Instant::now();
-    let mut osm_graph = h3_network_from_osm("resources/denmark-processed.osm.pbf", &OSMOptions::default()).unwrap();
+    let mut osm_graph = h3_network_from_osm(
+        "resources/denver-processed.osm.pbf",
+        &OSMOptions::default(),
+    )
+    .unwrap();
 
-    // let mut cycle_graph = h3_network_from_osm(
-    //     "resources/copenhagen-processed.osm.pbf",
-    //     OSMLayer::Cycling,
-    // ).unwrap();
+    // // let mut cycle_graph = h3_network_from_osm(
+    // //     "resources/copenhagen-processed.osm.pbf",
+    // //     OSMLayer::Cycling,
+    // // ).unwrap();
 
     println!(
         "osm graph created with {} nodes in {} s",
@@ -18,7 +25,9 @@ fn main() -> anyhow::Result<()> {
     );
 
     let start = Instant::now();
-    let mut gtfs_graph = h3_network_from_gtfs("resources/rejseplanen.zip").unwrap();
+    let (mut gtfs_graph, offset) = h3_network_from_gtfs("resources/denver_gtfs.zip", 0).unwrap();
+    // let (mut gtfs_graph_2, _) = h3_network_from_gtfs("resources/gtfs_bus.zip", offset).unwrap();
+
     println!(
         "gtfs graph created with {} nodes in {} s",
         gtfs_graph.nr_nodes(),
@@ -28,6 +37,7 @@ fn main() -> anyhow::Result<()> {
     let start = Instant::now();
     // osm_graph.merge(&mut cycle_graph)?;
     osm_graph.merge(&mut gtfs_graph)?;
+    // osm_graph.merge(&mut gtfs_graph_2)?;
 
     println!(
         "merged graph created with {} nodes in {} s",
@@ -73,7 +83,8 @@ fn plot_png(
     println!("y: {} .. {}", y_min, y_max);
     println!("z: {} .. {}", z_min, z_max);
 
-    let root = plotters::backend::BitMapBackend::new("test.png", (16000, 16000)).into_drawing_area();
+    let root =
+        plotters::backend::BitMapBackend::new("test.png", (10000, 10000)).into_drawing_area();
 
     let mut chart = ChartBuilder::on(&root)
         .margin(10)
@@ -90,11 +101,13 @@ fn plot_png(
 
     chart.draw_series(plot_data.into_iter().map(|data| {
         match (data.0 .1 as i32, data.1 .1 as i32) {
-            (0, 0) => PathElement::new(vec![data.0, data.1], BLUE.mix(0.5)),
             (-1, -1) => PathElement::new(vec![data.0, data.1], ORANGE.mix(0.5)),
             (-2, -2) => PathElement::new(vec![data.0, data.1], RED.mix(0.5)),
-            (-1, 0) => PathElement::new(vec![data.0, data.1], LIGHTBLUE.mix(0.2)),
-            _ => PathElement::new(vec![data.0, data.1], YELLOW.mix(0.01)),
+            (-1, -2) => PathElement::new(vec![data.0, data.1], YELLOW.mix(0.01)),
+            (-2, -1) => PathElement::new(vec![data.0, data.1], YELLOW.mix(0.01)),
+            (-1, _) => PathElement::new(vec![data.0, data.1], LIGHTBLUE.mix(0.01)),
+            (_, -1) => PathElement::new(vec![data.0, data.1], LIGHTBLUE.mix(0.01)),
+            (_, _) => PathElement::new(vec![data.0, data.1], BLUE.mix(0.6)),
         }
     }))?;
 

@@ -187,17 +187,30 @@ impl<T: Eq + Hash + Copy + Send + Sync + Ord + std::fmt::Debug> Graph<T> {
         };
         // create the edge
         // add the edge to the graph
-        edges
-            .entry(start_node_index)
-            .or_default()
-            .insert(crate::Edge {
-                from: start_node_index,
-                to: end_node_index,
-                weight,
-                weight_list,
-                capacity,
-            });
+        let new_edge = crate::Edge {
+            from: start_node_index,
+            to: end_node_index,
+            weight,
+            weight_list,
+            capacity,
+        };
 
+        if let Some(existing_edge) = edges
+                    .entry(start_node_index)
+                    .or_default()
+                    .get(&new_edge) {
+            if existing_edge.weight.unwrap_or(60.0) > new_edge.weight.unwrap_or(60.0) {
+                edges
+                    .entry(start_node_index)
+                    .or_default()
+                    .insert(new_edge);
+            }
+        } else {
+            edges
+                .entry(start_node_index)
+                .or_default()
+                .insert(new_edge);
+        }
         Ok(())
     }
 
@@ -250,14 +263,11 @@ impl<T: Eq + Hash + Copy + Send + Sync + Ord + std::fmt::Debug> Graph<T> {
     ) -> HashMap<T, anyhow::Result<Vec<Option<f64>>>> {
         let map_func = |s: &T| (*s, self.bfs(s, None, destinations).map(|res| res.1));
         if force {
-            origins
-                .into_par_iter()
-                .map(map_func)
-                .collect()
+            origins.into_par_iter().map(map_func).collect()
         } else {
             // removes duplicates before iteration
             origins
-                .into_iter()
+                .iter()
                 .collect::<HashSet<&T>>()
                 .into_par_iter()
                 .map(map_func)
@@ -372,6 +382,7 @@ impl<T: Eq + Hash + Copy + Send + Sync + Ord + std::fmt::Debug> Graph<T> {
         Ok((None, distances))
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn matrix_astar_distance(
         &self,
         origins: &Vec<T>,
@@ -385,14 +396,20 @@ impl<T: Eq + Hash + Copy + Send + Sync + Ord + std::fmt::Debug> Graph<T> {
         let map_func = |s: &T| {
             (
                 *s,
-                self.astar(s, None, destinations, infinity, dynamic_infinity, weight_list_index, heuristic)
-                    .map(|res| res.distances),
+                self.astar(
+                    s,
+                    None,
+                    destinations,
+                    infinity,
+                    dynamic_infinity,
+                    weight_list_index,
+                    heuristic,
+                )
+                .map(|res| res.distances),
             )
         };
         if force {
-            origins
-                .into_par_iter()
-                .map(map_func).collect()
+            origins.into_par_iter().map(map_func).collect()
         } else {
             // removes duplicates before iteration
             origins
@@ -405,6 +422,7 @@ impl<T: Eq + Hash + Copy + Send + Sync + Ord + std::fmt::Debug> Graph<T> {
     }
 
     /// calculates the shortest path between two nodes using the A* algorithm, returns the path and the distance
+    #[allow(clippy::too_many_arguments)]
     pub fn astar(
         &self,
         start: &T,
@@ -473,7 +491,7 @@ impl<T: Eq + Hash + Copy + Send + Sync + Ord + std::fmt::Debug> Graph<T> {
         g_score[start_idx] = Some(0.0);
         q.push(Reverse(AStarNode {
             id: start_idx,
-            f_score: heuristic(&start, &target_list[0]),
+            f_score: heuristic(start, &target_list[0]),
         }));
 
         while !q.is_empty() {

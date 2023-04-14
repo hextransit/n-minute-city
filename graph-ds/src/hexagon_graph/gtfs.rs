@@ -8,13 +8,14 @@ use itertools::Itertools;
 #[allow(clippy::type_complexity)]
 pub struct GtfsProcessingResult {
     pub edge_data: Vec<((usize, CellIndex, CellIndex), f64)>,
+    pub nr_routes: usize,
     pub stop_frequencies: HashMap<(CellIndex, usize), Vec<f64>>,
 }
 
 /// calculates the frequencies at each stop for every route
 ///
 /// frequencies are stored per hour of the week, the frequency number is the number of departures per hour
-pub fn calcualte_stop_frequencies(
+pub fn calculate_stop_frequencies(
     trips: &HashMap<String, gtfs_structures::Trip>,
     calendar: &HashMap<String, gtfs_structures::Calendar>,
     route_layer_map: HashMap<String, usize>,
@@ -142,7 +143,6 @@ pub fn calculate_edge_data(
                     }
                 })
                 .collect::<HashMap<_, _>>();
-
             edges
         })
         .collect::<Vec<_>>();
@@ -152,13 +152,21 @@ pub fn calculate_edge_data(
 /// process the GTFS feed and return both the edge data and the stop frequencies
 pub fn process_gtfs(
     url: &str,
+    route_index_offset: usize,
     h3_resolution: h3o::Resolution,
 ) -> anyhow::Result<GtfsProcessingResult> {
     println!("getting GTFS feed from {url}");
 
-    let feed = gtfs_structures::GtfsReader::default()
+    let feed = if let Ok(feed_fast) = gtfs_structures::GtfsReader::default()
         .trim_fields(false)
-        .read(url)?;
+        .read(url)
+    {
+        feed_fast
+    } else {
+        gtfs_structures::GtfsReader::default()
+            .trim_fields(true)
+            .read(url)?
+    };
 
     let route_data: HashMap<String, usize> = feed
         .routes
@@ -167,14 +175,15 @@ pub fn process_gtfs(
         .keys()
         .enumerate()
         .par_bridge()
-        .map(|(index, route)| (route.to_string(), index))
+        .map(|(index, route)| (route.to_string(), index + route_index_offset))
         .collect();
 
     println!("routes: {}", route_data.len());
 
     Ok(GtfsProcessingResult {
         edge_data: calculate_edge_data(&feed.trips, route_data.clone(), h3_resolution)?,
-        stop_frequencies: calcualte_stop_frequencies(
+        nr_routes: route_data.len(),
+        stop_frequencies: calculate_stop_frequencies(
             &feed.trips,
             &feed.calendar,
             route_data,
