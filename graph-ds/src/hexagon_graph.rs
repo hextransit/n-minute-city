@@ -21,10 +21,46 @@ use self::{
     osm::{process_osm_pbf, OSMLayer},
 };
 
+#[cfg(feature = "pyo3")]
+use pyo3::types::PyDict;
+
 pub struct OSMOptions {
-    osm_layer: Option<OSMLayer>,
-    gtfs_layer: bool,
-    bike_penalty: f64,
+    pub osm_layer: Option<OSMLayer>,
+    pub gtfs_layer: bool,
+    pub weight_modifier: WeightModifier,
+}
+#[derive(Debug, Clone)]
+pub struct WeightModifier {
+    pub bike_penalty: f64,
+    pub wait_time_multiplier: f64,
+    pub walk_speed: f64,
+    pub bike_speed: f64,
+}
+
+#[cfg(feature = "pyo3")]
+impl FromPyObject<'_> for WeightModifier {
+    fn extract<'source>(ob: &'source PyAny) -> PyResult<Self> {
+        let dict = ob.cast_as::<PyDict>()?;
+        let bike_penalty = dict
+            .get_item("bike_penalty").and_then(|x| x.extract::<f64>().ok())
+            .unwrap_or(1.0);
+        let wait_time_multiplier = dict
+            .get_item("wait_time_multiplier").and_then(|x| x.extract::<f64>().ok())
+            .unwrap_or(1.0);
+        let walk_speed = dict
+            .get_item("walk_speed").and_then(|x| x.extract::<f64>().ok())
+            .unwrap_or(1.4);
+        let bike_speed = dict
+            .get_item("bike_speed").and_then(|x| x.extract::<f64>().ok())
+            .unwrap_or(4.5);
+
+        Ok(WeightModifier {
+            bike_penalty,
+            wait_time_multiplier,
+            walk_speed,
+            bike_speed,
+        })
+    }
 }
 
 impl Default for OSMOptions {
@@ -32,7 +68,18 @@ impl Default for OSMOptions {
         OSMOptions {
             osm_layer: None,
             gtfs_layer: true,
+            weight_modifier: WeightModifier::default(),
+        }
+    }
+}
+
+impl Default for WeightModifier {
+    fn default() -> Self {
+        WeightModifier {
             bike_penalty: 1.0,
+            wait_time_multiplier: 1.0,
+            walk_speed: 1.4,
+            bike_speed: 4.5,
         }
     }
 }
@@ -126,28 +173,28 @@ pub fn h3_network_from_osm(osm_url: &str, options: &OSMOptions) -> anyhow::Resul
             graph.build_and_add_egde(
                 from_cell,
                 from_base_cell,
-                Some(options.bike_penalty),
+                Some(options.weight_modifier.bike_penalty),
                 None,
                 None,
             )?;
             graph.build_and_add_egde(
                 to_cell,
                 to_base_cell,
-                Some(options.bike_penalty),
+                Some(options.weight_modifier.bike_penalty),
                 None,
                 None,
             )?;
             graph.build_and_add_egde(
                 from_base_cell,
                 from_cell,
-                Some(options.bike_penalty),
+                Some(options.weight_modifier.bike_penalty),
                 None,
                 None,
             )?;
             graph.build_and_add_egde(
                 to_base_cell,
                 to_cell,
-                Some(options.bike_penalty),
+                Some(options.weight_modifier.bike_penalty),
                 None,
                 None,
             )?;
@@ -157,9 +204,11 @@ pub fn h3_network_from_osm(osm_url: &str, options: &OSMOptions) -> anyhow::Resul
 }
 
 pub fn h3_network_from_gtfs(
+    options: &WeightModifier,
     gtfs_url: &str,
     route_index_offset: usize,
 ) -> anyhow::Result<(Graph<H3Cell>, usize)> {
+    let weight_time_multiplier = options.wait_time_multiplier;
     let gtfs_res = gtfs::process_gtfs(gtfs_url, route_index_offset, h3o::Resolution::Twelve)?;
     let nr_routes = gtfs_res.nr_routes;
     let weight_lists = gtfs_res.stop_frequencies;
@@ -182,17 +231,15 @@ pub fn h3_network_from_gtfs(
             if weight_list.len() != 24 * 7 {
                 graph.build_and_add_egde(base_cell, from_cell, Some(5.0), None, None)?;
             } else {
-                let list_min = 60.0
-                    / weight_list.iter().fold(1.0, |a, b| { f64::max(a, *b)})
-                    / 2.0;
+                let list_min = 60.0 / weight_list.iter().fold(1.0, |a, b| f64::max(a, *b)) / 2.0;
                 let weight_list = weight_list
                     .iter()
-                    .map(|x| 60.0 / x / 2.0)
+                    .map(|x| (60.0 / x / 2.0) * weight_time_multiplier)
                     .collect::<Vec<_>>();
                 graph.build_and_add_egde(
                     base_cell,
                     from_cell,
-                    Some(list_min),
+                    Some(list_min * weight_time_multiplier),
                     Some(weight_list),
                     None,
                 )?;
@@ -241,7 +288,7 @@ impl Graph<H3Cell> {
                         (nodes.get(*key), nodes.get(edge.to))
                     {
                         let start_layer = if start.id.layer >= 0 {
-                            start.id.layer as f32 / 256.0 
+                            start.id.layer as f32 / 256.0
                         } else {
                             start.id.layer as f32
                         };
@@ -283,7 +330,7 @@ pub struct PyH3Graph {
 #[pymethods]
 impl PyH3Graph {
     #[new]
-    pub fn new(bike_penalty: f64, k_ring: u32, layers: String) -> Self {
+    pub fn new(weight_options: Option<WeightModifier>, k_ring: u32, layers: String) -> Self {
         let (gtfs_layer, osm_layer) = match layers.as_str() {
             "walk+bike" => (false, None),
             "walk" => (false, Some(OSMLayer::Walking)),
@@ -295,7 +342,7 @@ impl PyH3Graph {
             options: OSMOptions {
                 osm_layer,
                 gtfs_layer,
-                bike_penalty,
+                weight_modifier: weight_options.unwrap_or_default(),
             },
             k_ring,
         }
@@ -317,7 +364,8 @@ impl PyH3Graph {
                 let start = Instant::now();
 
                 let (mut gtfs_graph, next_offset) =
-                    h3_network_from_gtfs(gtfs_path.as_str(), offset).unwrap();
+                    h3_network_from_gtfs(&self.options.weight_modifier, gtfs_path.as_str(), offset)
+                        .unwrap();
                 offset += next_offset + 1;
 
                 println!(
@@ -360,7 +408,12 @@ impl PyH3Graph {
         }
     }
 
-    pub fn dijkstra_path(&self, origin: u64, destination: u64, hour_of_week: Option<usize>) -> PyResult<(Vec<u64>, f64)> {
+    pub fn dijkstra_path(
+        &self,
+        origin: u64,
+        destination: u64,
+        hour_of_week: Option<usize>,
+    ) -> PyResult<(Vec<u64>, f64)> {
         fn h(_start_cell: &H3Cell, _end_cell: &H3Cell) -> f64 {
             1.0
         }
@@ -390,9 +443,9 @@ impl PyH3Graph {
             u64::from(destination.cell)
         );
 
-        let astar_res = self
-            .graph
-            .astar(origin, Some(destination), None, None, None, hour_of_week, h);
+        let astar_res =
+            self.graph
+                .astar(origin, Some(destination), None, None, None, hour_of_week, h);
 
         if let Ok(astar_res) = astar_res {
             if let (Some(path), Some(distance)) = (astar_res.path, astar_res.distances.first()) {
@@ -414,7 +467,12 @@ impl PyH3Graph {
         }
     }
 
-    pub fn astar_path(&self, origin: u64, destination: u64, hour_of_week: Option<usize>) -> PyResult<(Vec<u64>, f64)> {
+    pub fn astar_path(
+        &self,
+        origin: u64,
+        destination: u64,
+        hour_of_week: Option<usize>,
+    ) -> PyResult<(Vec<u64>, f64)> {
         fn h(start_cell: &H3Cell, end_cell: &H3Cell) -> f64 {
             if let Ok(dist) = start_cell.cell.grid_distance(end_cell.cell) {
                 dist as f64
@@ -452,9 +510,9 @@ impl PyH3Graph {
             u64::from(destination.cell)
         );
 
-        let astar_res = self
-            .graph
-            .astar(origin, Some(destination), None, None, None, hour_of_week, h);
+        let astar_res =
+            self.graph
+                .astar(origin, Some(destination), None, None, None, hour_of_week, h);
 
         if let Ok(astar_res) = astar_res {
             if let (Some(path), Some(distance)) = (astar_res.path, astar_res.distances.first()) {
@@ -567,7 +625,7 @@ fn u64list_to_h3cells(
 #[cfg(feature = "pyo3")]
 impl Default for PyH3Graph {
     fn default() -> Self {
-        Self::new(1.0, 2, "all".to_string())
+        Self::new(Some(WeightModifier::default()), 2, "all".to_string())
     }
 }
 
