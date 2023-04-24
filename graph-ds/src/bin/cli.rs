@@ -1,4 +1,6 @@
-use graph_ds::hexagon_graph::{h3_network_from_gtfs, h3_network_from_osm, OSMOptions};
+use graph_ds::hexagon_graph::{
+    h3_network_from_gtfs, h3_network_from_osm, OSMOptions, WeightModifier,
+};
 use plotters::{
     prelude::*,
     style::full_palette::{LIGHTBLUE, ORANGE},
@@ -8,7 +10,7 @@ use std::time::Instant;
 fn main() -> anyhow::Result<()> {
     let start = Instant::now();
     let mut osm_graph = h3_network_from_osm(
-        "resources/denver-processed.osm.pbf",
+        "resources/denver/denver-processed.osm.pbf",
         &OSMOptions::default(),
     )
     .unwrap();
@@ -25,7 +27,12 @@ fn main() -> anyhow::Result<()> {
     );
 
     let start = Instant::now();
-    let (mut gtfs_graph, offset) = h3_network_from_gtfs("resources/denver_gtfs.zip", 0).unwrap();
+    let (mut gtfs_graph, offset) = h3_network_from_gtfs(
+        &WeightModifier::default(),
+        "resources/denver/denver_gtfs.zip",
+        0,
+    )
+    .unwrap();
     // let (mut gtfs_graph_2, _) = h3_network_from_gtfs("resources/gtfs_bus.zip", offset).unwrap();
 
     println!(

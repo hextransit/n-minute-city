@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use h3o::CellIndex;
 use osmpbf::{Element, ElementReader};
 
-use super::OSMOptions;
+use super::{OSMOptions, WeightModifier};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum OSMLayer {
@@ -11,8 +11,16 @@ pub enum OSMLayer {
     Walking,
 }
 
+pub fn calculate_weight(layer: &OSMLayer, options: &WeightModifier, cell_distance: f64) -> f64 {
+    let speed = match layer {
+        OSMLayer::Cycling => options.bike_speed,
+        OSMLayer::Walking => options.walk_speed,
+    };
+    cell_distance / speed / 60.0
+}
+
 impl OSMLayer {
-    pub fn get_weight(&self, cell_distance: f64) -> f64 {
+    pub fn get_default_weight(&self, cell_distance: f64) -> f64 {
         match self {
             OSMLayer::Cycling => cell_distance / 4.5 / 60.0,
             OSMLayer::Walking => cell_distance / 1.4 / 60.0,
@@ -48,7 +56,6 @@ pub fn process_osm_pbf(
     let edge_length = h3_resolution.edge_length_m();
     let cell_distance = (edge_length.powi(2) - (edge_length / 2.0).powi(2)).sqrt() * 2.0;
 
-
     println!("processing osm pbf file: {url}");
 
     let edge_data = reader
@@ -64,7 +71,9 @@ pub fn process_osm_pbf(
                         layers
                             .into_iter()
                             .flat_map(|layer| {
-                                if     way.tags().any(|(k, _)| layer.get_required_tags().contains(&k))
+                                if way
+                                    .tags()
+                                    .any(|(k, _)| layer.get_required_tags().contains(&k))
                                     && way.tags().any(|(k, _)| k == "highway")
                                     && way.tags().all(|(k, v)| tag_value_matches(k, v, &layer))
                                 {
@@ -95,7 +104,14 @@ pub fn process_osm_pbf(
                                             let a = cells[0];
                                             let b = cells[1];
                                             if a != b {
-                                                Ok(((layer, a, b), layer.get_weight(cell_distance)))
+                                                Ok((
+                                                    (layer, a, b),
+                                                    calculate_weight(
+                                                        &layer,
+                                                        &options.weight_modifier,
+                                                        cell_distance,
+                                                    ),
+                                                ))
                                             } else {
                                                 Err(anyhow::anyhow!("same cell"))
                                             }
