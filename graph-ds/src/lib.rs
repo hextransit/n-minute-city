@@ -195,21 +195,12 @@ impl<T: Eq + Hash + Copy + Send + Sync + Ord + std::fmt::Debug> Graph<T> {
             capacity,
         };
 
-        if let Some(existing_edge) = edges
-                    .entry(start_node_index)
-                    .or_default()
-                    .get(&new_edge) {
+        if let Some(existing_edge) = edges.entry(start_node_index).or_default().get(&new_edge) {
             if existing_edge.weight.unwrap_or(60.0) > new_edge.weight.unwrap_or(60.0) {
-                edges
-                    .entry(start_node_index)
-                    .or_default()
-                    .insert(new_edge);
+                edges.entry(start_node_index).or_default().insert(new_edge);
             }
         } else {
-            edges
-                .entry(start_node_index)
-                .or_default()
-                .insert(new_edge);
+            edges.entry(start_node_index).or_default().insert(new_edge);
         }
         Ok(())
     }

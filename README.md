@@ -40,7 +40,12 @@ There are no direct connections from the bike layer to the transit layers.
 
 create a new graph object:
 ```python
-graph = PyH3Graph(bike_penalty=0.5, k_ring=2, layers="all")
+graph = PyH3Graph(weight_options={
+    bike_penalty: 1.0,
+    wait_time_multiplier: 1.0,
+    walk_speed: 1.4,
+    bike_speed: 4.5,
+} | {}>, k_ring=2, layers="all")
 graph.create(osm_path="<path>", gtfs_paths=["<path>"])
 ```
 The `layers` keyword argument allows to specify the layers the graph should contain after processing. The walk network is always included. Supported layer tags are: `all` (default), `walk`, `walk+bike`, `walk+transit`.
@@ -48,7 +53,7 @@ The `layers` keyword argument allows to specify the layers the graph should cont
 
 **PyH3Graph** exposes two functions for pathfinding:
 * `matrix_distance` - returns the distance between all hexagon cells
-* `astar_path` - returns the path between two hexagon cells
+* `dijkstra_path` - returns the path between two hexagon cells
 
 H3 cells need to be input in their u64 integer representation. Only cells on the base layer are valid start and end points.
 
@@ -56,8 +61,10 @@ H3 cells need to be input in their u64 integer representation. Only cells on the
 # get the distance matrix
 distances = graph.matrix_distance(origins=[u64], destinations=[u64], hour_of_week=int, infinity=Optional[float], dynamic_infinity=bool)
 
-path = graph.astar_path(start=u64, end=u64)
+path = graph.dijkstra_path(start=u64, end=u64, hour_of_week=Optional[int])
 ```
+
+For testing purposes, you can obtain a random node from the graph by calling `graph.get_random_node()`
 
 The optional `hour_of_week` parameter allows the transit layers to model expected wait time based on the time of day. The input expects an integer representing the hour of the week, starting at 0 for Monday 00:00 and ending at 167 for Sunday 23:00.
 
