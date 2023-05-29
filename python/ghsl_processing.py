@@ -46,7 +46,6 @@ def count_occurances_break_tie(l):
         
 # reproject bounding box
 # Define the point coordinates in the source CRS
-# paste csv bounding box from this website https://boundingbox.klokantech.com/
 def reproj_bounding_box(bbox, dst_crs, src_crs='EPSG:4326'):
     # Define the source and destination coordinate reference systems
     transformer = pyproj.Transformer.from_crs(src_crs, dst_crs)
@@ -142,6 +141,8 @@ def tif_to_h3(reprojected_file, transformation, h3_csv, H3_RES):
     # add column which specifies residential or not
     val_map = {11:1,12:1,13:1,14:1,15:1,21:0,22:0,23:0,24:0,25:0}
     df['residential_bool'] = df['ghsl_code'].map(val_map)
+    # only keep residential areas - we do this in routing right now, bad
+    #df = df[df['residential_bool']==1]
 
     df.to_csv(h3_csv, index=False)
 
