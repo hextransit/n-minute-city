@@ -5,6 +5,7 @@ main = "build/worker/shim.mjs"
 
 [vars]
 WORKERS_RS_VERSION = "0.0.15"
+REJSEPLANEN_URL = "http://example.com"
 
 [build]
 command = "cargo install -q worker-build && worker-build --release" # required
