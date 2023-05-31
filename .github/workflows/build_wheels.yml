@@ -58,7 +58,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
         with:
-          repository: potatoTVnet/n-minute-city
+          repository: hextransit/n-minute-city
           ref: main
           lfs: true
           token: ${{ secrets.GITHUB_TOKEN }}
