@@ -29,7 +29,7 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
     // functionality and a `RouteContext` which you can use to  and get route parameters and
     // Environment bindings like KV Stores, Durable Objects, Secrets, and Variables.
     router
-        .post_async("/", |mut req, _| async move {
+        .post_async("/", |mut req, ctx| async move {
             let Ok(form) = req.form_data().await else {
                 return Response::error("missing form data", 400)
             };
@@ -53,9 +53,9 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
                     [origin_lat_lng.lat(), origin_lat_lng.lng(), destination_lat_lng.lat(), destination_lat_lng.lng()].map(|x| {
                     (x * 1_000_000.0) as i64
                 });
-
+                let base_url = ctx.var("REJSEPLANEN_URL")?.to_string();
                 // make request to rejseplanen api
-                let url = format!("http://xmlopen.rejseplanen.dk/bin/rest.exe/trip?originCoordX={}&originCoordY={}&originCoordName=A&destCoordX={}&destCoordY={}&destCoordName=B&format=json", olng, olat, dlng, dlat );
+                let url = format!("{}trip?originCoordX={}&originCoordY={}&originCoordName=A&destCoordX={}&destCoordY={}&destCoordName=B&format=json", base_url, olng, olat, dlng, dlat );
                 console_log!("url: {}", url);
                 if let Ok(response) = get(url).await {
                     console_log!("response: {:?}", response);
