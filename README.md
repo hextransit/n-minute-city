@@ -21,20 +21,7 @@ The wheels are generated automatically by GitHub Actions.
 
 Graphs can be created from OSM and GTFS data using the `create` function. The graph will be multi-layered, with a base layer of hexagon cells for the walking network, a layer for the bike network and one additional layer for every route in the GTFS data. The edge weights represent time in minutes. The chosen H3 hexagon resolution is 12.
 
-the weights are currently set as such:
-| from_layer | to_layer | weight (minutes) | comment |
-|------------|----------|--------| ------- |
-| walk       | walk     | ~0.12  | walk speed 1.4 m/s |
-| walk       | bike     | 0.5    |         |
-| walk       | transit  | wait_time | either average wait time or expected wait time at the given hour of the week |
-| transit    | walk     | 1.0    |         |
-| transit    | transit  | travel_time | differnce between depature and arrival time in whole minutes |
-| bike       | bike     | ~0.03  | bike speed 4.5 m/s |
-| bike       | walk     | 0.5    |         |
-
 There are no direct connections from the bike layer to the transit layers.
-
-
 
 ### Using PyH3Graph or PyCellGraph from python
 
